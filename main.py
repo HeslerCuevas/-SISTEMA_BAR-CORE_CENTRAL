@@ -5,6 +5,7 @@ from sqlmodel import Session, text, SQLModel
 
 from app.api.routers import productos_router
 from app.api.routers import inventario_router
+from app.api.routers import pedidos_router
 from app.db.database import get_session, engine
 from app.models import core_models
 from app.core.middleware import AuditoriaMiddleware
@@ -38,6 +39,7 @@ app = FastAPI(
 app.add_middleware(AuditoriaMiddleware)
 app.include_router(productos_router.router)
 app.include_router(inventario_router.router)
+app.include_router(pedidos_router.router)
 
 @app.get("/test-db", tags=["Diagnóstico"])
 def test_database_connection(session: Session = Depends(get_session)):

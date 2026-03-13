@@ -3,10 +3,6 @@ from datetime import datetime
 from sqlmodel import SQLModel, Field
 from sqlalchemy import Column, String, Integer, ForeignKey, Boolean, DateTime, text, Numeric
 
-# ==========================================
-# 1. SEGURIDAD Y ACCESOS
-# ==========================================
-
 class Rol(SQLModel, table=True):
     __tablename__ = "Roles"
     id: Optional[int] = Field(default=None, sa_column=Column("Id", Integer, primary_key=True))
@@ -32,9 +28,6 @@ class Cliente(SQLModel, table=True):
     fecha_registro: datetime = Field(sa_column=Column("FechaRegistro", DateTime, server_default=text("GETDATE()")))
     activo: bool = Field(sa_column=Column("Activo", Boolean, server_default=text("1")))
 
-# ==========================================
-# 2. CATÁLOGO Y FINANZAS
-# ==========================================
 
 class Impuesto(SQLModel, table=True):
     __tablename__ = "Impuestos"
@@ -64,10 +57,6 @@ class Producto(SQLModel, table=True):
     es_inventariable: bool = Field(default=True, sa_column=Column("EsInventariable", Boolean, server_default=text("1")))
     activo: bool = Field(sa_column=Column("Activo", Boolean, server_default=text("1")))
 
-# ==========================================
-# 3. INVENTARIO Y KARDEX
-# ==========================================
-
 class InventarioActual(SQLModel, table=True):
     __tablename__ = "Inventario_Actual"
     id: Optional[int] = Field(default=None, sa_column=Column("Id", Integer, primary_key=True))
@@ -86,15 +75,13 @@ class MovimientoInventario(SQLModel, table=True):
     motivo: str = Field(sa_column=Column("Motivo", String(255), nullable=False))
     fecha_movimiento: datetime = Field(sa_column=Column("FechaMovimiento", DateTime, server_default=text("GETDATE()")))
 
-# ==========================================
-# 4. VENTAS Y PEDIDOS
-# ==========================================
 
 class PedidoGlobal(SQLModel, table=True):
     __tablename__ = "Pedidos_Global"
     id: Optional[int] = Field(default=None, sa_column=Column("Id", Integer, primary_key=True))
     cliente_id: Optional[int] = Field(default=None, sa_column=Column("ClienteId", Integer, ForeignKey("Clientes.Id")))
     empleado_id: Optional[int] = Field(default=None, sa_column=Column("EmpleadoId", Integer, ForeignKey("Empleados.Id")))
+    mesa: Optional[int] = Field(default=None)
     canal_origen: str = Field(sa_column=Column("CanalOrigen", String(50), nullable=False))
     estado: str = Field(default="PENDIENTE", sa_column=Column("Estado", String(50), nullable=False, server_default=text("'PENDIENTE'")))
     subtotal: float = Field(default=0.0, sa_column=Column("Subtotal", Numeric(12, 2), nullable=False, server_default=text("0")))
@@ -112,10 +99,6 @@ class DetallePedido(SQLModel, table=True):
     impuesto_historico: float = Field(sa_column=Column("ImpuestoHistorico", Numeric(5, 2), nullable=False))
     monto_impuesto: float = Field(default=0.0, sa_column=Column("MontoImpuesto", Numeric(12, 2), nullable=False, server_default=text("0")))
     subtotal_linea: float = Field(default=0.0, sa_column=Column("SubtotalLinea", Numeric(12, 2), nullable=False, server_default=text("0")))
-
-# ==========================================
-# 5. TRAZABILIDAD
-# ==========================================
 
 class CoreLog(SQLModel, table=True):
     __tablename__ = "Core_Logs"
