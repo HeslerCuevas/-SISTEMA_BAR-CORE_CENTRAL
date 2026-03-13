@@ -8,10 +8,6 @@ class SalesManager:
 
     @staticmethod
     def facturar_pedido(session: Session, pedido_id: int, empleado_caja_id: int):
-        """
-        Lógica Core: Procesada por la App Web de CAJA (React).
-        Cierra un pedido pendiente, asume el cobro y lo prepara para la DGII.
-        """
         pedido = session.get(PedidoGlobal, pedido_id)
         if not pedido:
             raise HTTPException(status_code=404, detail=f"Pedido #{pedido_id} no encontrado en el CORE.")
@@ -36,11 +32,6 @@ class SalesManager:
 
     @staticmethod
     def cancelar_pedido(session: Session, pedido_id: int, empleado_id: int, motivo: str):
-        """
-        Lógica Core: Cancelación de orden.
-        Si un cliente devuelve un trago o se cancela la mesa, el sistema DEBE devolver
-        el stock al inventario automáticamente.
-        """
         pedido = session.get(PedidoGlobal, pedido_id)
         if not pedido:
             raise HTTPException(status_code=404, detail="Pedido no encontrado.")

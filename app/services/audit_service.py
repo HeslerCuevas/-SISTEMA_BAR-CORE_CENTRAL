@@ -5,10 +5,6 @@ from app.models.core_models import CoreLog
 
 
 def log_auditoria(nivel: str, origen: str, mensaje: str, data: dict = None):
-    """
-    Inserta un registro automático en Core_Logs.
-    Niveles permitidos: 'INFO', 'WARNING', 'ERROR', 'CRITICAL'.
-    """
     with Session(engine) as session:
         try:
             data_str = json.dumps(data) if data else None

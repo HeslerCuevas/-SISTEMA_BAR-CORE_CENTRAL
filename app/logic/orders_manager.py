@@ -6,10 +6,6 @@ from app.logic.inventory_manager import InventoryManager
 class OrdersManager:
     @staticmethod
     def crear_pedido_completo(session: Session, canal_origen: str, cliente_id: int, empleado_id: int, items: list[dict]):
-        """
-        Lógica Core: Orquesta la creación de un pedido evaluando stock, precios e impuestos.
-        items = [{"producto_id": 1, "cantidad": 2}, ...]
-        """
         nuevo_pedido = PedidoGlobal(
             cliente_id=cliente_id,
             empleado_id=empleado_id,

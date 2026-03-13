@@ -7,9 +7,6 @@ class InventoryManager:
     @staticmethod
     def registrar_movimiento(session: Session, producto_id: int, cantidad: int, tipo: str, motivo: str,
                              empleado_id: int = None):
-        """
-        Lógica Core: Centraliza TODA entrada o salida de almacén.
-        """
         stock = session.exec(select(InventarioActual).where(InventarioActual.producto_id == producto_id)).first()
         if not stock:
             raise HTTPException(status_code=404, detail="Producto no inicializado en inventario.")
@@ -17,7 +14,6 @@ class InventoryManager:
         if tipo == 'SALIDA' and stock.cantidad_disponible < cantidad:
             raise HTTPException(status_code=400, detail=f"Stock insuficiente. Disponible: {stock.cantidad_disponible}")
 
-        # Actualización de stock maestro
         if tipo == 'ENTRADA':
             stock.cantidad_disponible += cantidad
         elif tipo == 'SALIDA':
