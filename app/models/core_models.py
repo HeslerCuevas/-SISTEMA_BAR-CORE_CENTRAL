@@ -86,6 +86,7 @@ class PedidoGlobal(SQLModel, table=True):
     estado: str = Field(default="PENDIENTE", sa_column=Column("Estado", String(50), nullable=False, server_default=text("'PENDIENTE'")))
     subtotal: float = Field(default=0.0, sa_column=Column("Subtotal", Numeric(12, 2), nullable=False, server_default=text("0")))
     total_impuestos: float = Field(default=0.0, sa_column=Column("TotalImpuestos", Numeric(12, 2), nullable=False, server_default=text("0")))
+    propina_legal: Optional[float] = Field(default=0.0, sa_column=Column("PropinaLegal", Numeric(12, 2), server_default=text("0")))
     total_general: float = Field(default=0.0, sa_column=Column("TotalGeneral", Numeric(12, 2), nullable=False, server_default=text("0")))
     fecha_creacion: datetime = Field(sa_column=Column("FechaCreacion", DateTime, server_default=text("GETDATE()")))
 

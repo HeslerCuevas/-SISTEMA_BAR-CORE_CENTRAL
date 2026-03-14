@@ -21,6 +21,7 @@ class PedidoResponse(BaseModel):
     canal_origen: str
     mesa: Optional[int]
     estado: str
+    propina_legal: Decimal
     subtotal: Decimal = None
     total_impuestos: Decimal = None
     total_general: Decimal = None

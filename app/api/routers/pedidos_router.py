@@ -1,6 +1,7 @@
+from asyncio.windows_events import NULL
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
-from typing import List
 
 from app.db.database import get_session
 from app.models.core_models import PedidoGlobal, DetallePedido
@@ -79,3 +80,34 @@ def resumen_pedido(id: int, session: Session = Depends(get_session)):
     if not pedido:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
     return pedido
+
+@router.post("/{id}/facturar", response_model=PedidoResponse, tags=["Pedidos"])
+def facturar(id: int, session: Session = Depends(get_session)):
+    pedido = session.get(PedidoGlobal, id)
+    if not pedido:
+        raise HTTPException(status_code=404, detail="Pedido no encontrado")
+
+    if pedido.estado != "PENDIENTE":
+        raise HTTPException(status_code=400, detail=f"El pedido no esta pendiente. Se encuentra {pedido.estado}")
+
+    try:
+        from decimal import Decimal
+        if pedido.canal_origen == "CAJA" and pedido.mesa is not None:
+            propina = pedido.subtotal * Decimal("0.10")
+            pedido.propina_legal = round(propina, 2)
+            pedido.total_general += pedido.propina_legal
+        else:
+            pedido.propina_legal = 0
+
+        pedido.estado = "FACTURADO"
+
+        session.add(pedido)
+        session.commit()
+        session.refresh(pedido)
+
+        return pedido
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=f"Error al facturar: {str(e)}")
+
+
