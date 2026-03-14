@@ -1,12 +1,9 @@
-from asyncio.windows_events import NULL
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
 from app.db.database import get_session
-from app.models.core_models import PedidoGlobal, DetallePedido
+from app.models.core_models import PedidoGlobal, DetallePedido, Producto, Impuesto, InventarioActual, MovimientoInventario
 from app.schemas.pedidos_schema import PedidoCreate, PedidoResponse, DetallePedidoCreate, DetallePedidoResponse
-from models.core_models import Producto, Impuesto
 
 router = APIRouter(
     prefix="/api/v1/pedidos",
@@ -102,6 +99,9 @@ def facturar(id: int, session: Session = Depends(get_session)):
         pedido.estado = "FACTURADO"
 
         session.add(pedido)
+
+        descontar_inventario(id, session)
+
         session.commit()
         session.refresh(pedido)
 
@@ -109,5 +109,36 @@ def facturar(id: int, session: Session = Depends(get_session)):
     except Exception as e:
         session.rollback()
         raise HTTPException(status_code=400, detail=f"Error al facturar: {str(e)}")
+
+
+def descontar_inventario(pedido_id: int, session: Session):
+    detalles = session.exec(select(DetallePedido).where(DetallePedido.pedido_id == pedido_id)).all()
+
+    for item in detalles:
+        # Traer el producto completo para ver si es inventariable
+        producto = session.get(Producto, item.producto_id)
+
+        if producto and producto.es_inventariable:
+            # Traer el registro de inventario de ese producto
+            inventario_db = session.exec(
+                select(InventarioActual).where(InventarioActual.producto_id == item.producto_id)
+            ).first()
+
+            if inventario_db:
+                # Validar stock y restar
+                if inventario_db.cantidad_disponible >= item.cantidad:
+                    inventario_db.cantidad_disponible -= item.cantidad
+
+                    # Crear el movimiento de salida (Kardex)
+                    movimiento = MovimientoInventario(
+                        producto_id=item.producto_id,
+                        cantidad=item.cantidad,
+                        tipo_movimiento="SALIDA",
+                        motivo=f"Venta Pedido #{pedido_id}"
+                    )
+                    session.add(movimiento)
+                    session.add(inventario_db)
+                else:
+                    raise HTTPException(status_code=400, detail=f"Stock insuficiente para {producto.nombre}")
 
 
