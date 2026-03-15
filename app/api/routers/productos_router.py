@@ -8,7 +8,7 @@ from app.schemas.producto_schema import ProductoCreate, ProductoResponse
 
 router = APIRouter(
     prefix="/api/v1/productos",
-    tags=["Módulo de Productos (Admin)"]
+    tags=["Módulo de Productos"]
 )
 
 

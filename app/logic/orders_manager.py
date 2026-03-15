@@ -1,33 +1,36 @@
 from sqlmodel import Session
+from decimal import Decimal
 from fastapi import HTTPException
-from app.models.core_models import PedidoGlobal, DetallePedido, Producto, Impuesto
+from app.models.core_models import PedidoGlobal, DetallePedido, Producto
 from app.logic.inventory_manager import InventoryManager
+
 
 class OrdersManager:
     @staticmethod
-    def crear_pedido_completo(session: Session, canal_origen: str, cliente_id: int, empleado_id: int, items: list[dict]):
+    def crear_pedido_completo(session: Session, canal_origen: str, cliente_id: int, empleado_id: int, items: list[dict],
+                              mesa: int = None):
         nuevo_pedido = PedidoGlobal(
             cliente_id=cliente_id,
             empleado_id=empleado_id,
             canal_origen=canal_origen,
+            mesa=mesa,
             estado="PENDIENTE"
         )
         session.add(nuevo_pedido)
         session.flush()
 
-        subtotal_global = 0.0
-        impuestos_global = 0.0
+        subtotal_global = Decimal("0.0")
+        impuestos_global = Decimal("0.0")
 
         for item in items:
             producto = session.get(Producto, item["producto_id"])
             if not producto or not producto.activo:
                 raise HTTPException(status_code=404, detail=f"Producto {item['producto_id']} no válido.")
 
-            impuesto_db = session.get(Impuesto, producto.impuesto_id)
-            tasa = impuesto_db.tasa_porcentaje if impuesto_db else 0.0
+            tasa = Decimal(str(producto.impuesto.tasa_porcentaje)) if producto.impuesto else Decimal("0.0")
 
-            subtotal_linea = float(producto.precio_base) * item["cantidad"]
-            monto_impuesto_linea = subtotal_linea * (float(tasa) / 100)
+            subtotal_linea = Decimal(str(producto.precio_base)) * item["cantidad"]
+            monto_impuesto_linea = subtotal_linea * (tasa / 100)
 
             detalle = DetallePedido(
                 pedido_id=nuevo_pedido.id,
@@ -48,12 +51,15 @@ class OrdersManager:
                 producto_id=producto.id,
                 cantidad=item["cantidad"],
                 tipo="SALIDA",
-                motivo=f"Venta desde canal {canal_origen}",
+                motivo=f"Venta canal {canal_origen} - Pedido #{nuevo_pedido.id}",
                 empleado_id=empleado_id
             )
 
+        propina = subtotal_global * Decimal("0.10")
+
         nuevo_pedido.subtotal = subtotal_global
         nuevo_pedido.total_impuestos = impuestos_global
-        nuevo_pedido.total_general = subtotal_global + impuestos_global
+        nuevo_pedido.propina_legal = propina
+        nuevo_pedido.total_general = subtotal_global + impuestos_global + propina
 
         return nuevo_pedido

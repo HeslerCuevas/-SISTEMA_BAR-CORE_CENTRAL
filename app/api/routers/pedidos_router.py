@@ -1,3 +1,4 @@
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
@@ -13,14 +14,19 @@ router = APIRouter(
 @router.post("/", response_model=PedidoResponse, tags=["Pedidos"])
 def crear_pedido(pedido: PedidoCreate, session: Session = Depends(get_session)):
     try:
+        if pedido.factura_local_uuid:
+            pedido_existente = session.exec(
+                select(PedidoGlobal).where(PedidoGlobal.factura_local_uuid == pedido.factura_local_uuid)
+            ).first()
+            if pedido_existente:
+                return pedido_existente
+
         nuevo_pedido = PedidoGlobal(**pedido.model_dump())
         session.add(nuevo_pedido)
-
         session.commit()
         session.refresh(nuevo_pedido)
 
         return nuevo_pedido
-
     except Exception as e:
         session.rollback()
         raise HTTPException(status_code=400, detail=f"Error al crear el pedido: {str(e)}")
@@ -52,7 +58,8 @@ def agregar_item(id: int, item_in: DetallePedidoCreate, session: Session = Depen
             precio_unitario_historico=precio_base,
             impuesto_historico=tasa,
             monto_impuesto=monto_impuesto_linea,
-            subtotal_linea=bruto_linea
+            subtotal_linea=bruto_linea,
+            detalle_local_uuid = item_in.detalle_local_uuid
         )
         session.add(nuevo_item)
 
@@ -115,21 +122,21 @@ def descontar_inventario(pedido_id: int, session: Session):
     detalles = session.exec(select(DetallePedido).where(DetallePedido.pedido_id == pedido_id)).all()
 
     for item in detalles:
-        # Traer el producto completo para ver si es inventariable
         producto = session.get(Producto, item.producto_id)
 
         if producto and producto.es_inventariable:
-            # Traer el registro de inventario de ese producto
             inventario_db = session.exec(
                 select(InventarioActual).where(InventarioActual.producto_id == item.producto_id)
             ).first()
 
             if inventario_db:
-                # Validar stock y restar
                 if inventario_db.cantidad_disponible >= item.cantidad:
                     inventario_db.cantidad_disponible -= item.cantidad
 
-                    # Crear el movimiento de salida (Kardex)
+                    # --- CAMBIO AQUÍ: Sello de tiempo para la Caja ---
+                    inventario_db.ultima_modificacion = datetime.now()
+                    # ------------------------------------------------
+
                     movimiento = MovimientoInventario(
                         producto_id=item.producto_id,
                         cantidad=item.cantidad,
@@ -140,5 +147,4 @@ def descontar_inventario(pedido_id: int, session: Session):
                     session.add(inventario_db)
                 else:
                     raise HTTPException(status_code=400, detail=f"Stock insuficiente para {producto.nombre}")
-
 

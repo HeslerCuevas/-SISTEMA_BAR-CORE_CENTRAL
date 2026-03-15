@@ -2,12 +2,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
 from app.db.database import get_session
-from app.models.core_models import InventarioActual, MovimientoInventario, Producto
+from app.models.core_models import InventarioActual, MovimientoInventario
 from app.schemas.inventario_schema import MovimientoCreate, InventarioResponse
 
 router = APIRouter(
     prefix="/api/v1/inventario",
-    tags=["Módulo de Inventario (Kardex)"]
+    tags=["Módulo de Inventario"]
 )
 
 

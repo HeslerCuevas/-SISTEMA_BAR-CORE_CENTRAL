@@ -1,15 +1,13 @@
 from sqlalchemy import func, Date
 from datetime import date
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlmodel import Session, select, desc
 
 from app.db.database import get_session
 from app.models.core_models import Producto, InventarioActual, PedidoGlobal
 from app.schemas.reportes_schema import VentasDiaResponse, RankingProductosResponse, AlertaStockResponse
 from models.core_models import DetallePedido
-
-# CONSTANTES
 
 router = APIRouter(
     prefix="/api/v1/reportes",
@@ -55,7 +53,7 @@ def get_top_productos_vendidos(session: Session = Depends(get_session)):
 
     resultado = session.exec(consulta).all()
 
-    return [RankingProductosResponse(nombre=r[0], cantidad_vendida=r[1]) for r in resultado]
+    return [RankingProductosResponse(nombre=registro[0], cantidad_vendida=registro[1]) for registro in resultado]
 
 
 @router.get("/productos-stock-bajo", response_model=List[AlertaStockResponse])
@@ -71,8 +69,8 @@ def get_productos_stock_bajo(session: Session = Depends(get_session)):
 
     return [
         AlertaStockResponse(
-            nombre=r[0],
-            cantidad_disponible=r[1],
-            stock_minimo=r[2]
-        ) for r in resultado
+            nombre=registro[0],
+            cantidad_disponible=registro[1],
+            stock_minimo=registro[2]
+        ) for registro in resultado
     ]

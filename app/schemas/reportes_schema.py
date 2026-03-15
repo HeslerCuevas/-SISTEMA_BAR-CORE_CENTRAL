@@ -18,11 +18,10 @@ class RankingProductosResponse(BaseModel):
     class Config:
         from_attributes = True
 
-
 class AlertaStockResponse(BaseModel):
     nombre: str
-    cantidad_disponible: Decimal
-    stock_minimo: Decimal
+    cantidad_disponible: int
+    stock_minimo: int
 
     class Config:
         from_attributes = True

@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 from typing import Optional
 from decimal import Decimal
+from datetime import datetime
 
 class ProductoCreate(BaseModel):
     categoria_id: int
@@ -15,6 +16,7 @@ class ProductoCreate(BaseModel):
 
 class ProductoResponse(ProductoCreate):
     id: int
+    ultima_modificacion: datetime
 
     class Config:
         from_attributes = True
