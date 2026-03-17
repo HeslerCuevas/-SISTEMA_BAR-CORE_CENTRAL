@@ -1,4 +1,5 @@
 from sqlmodel import Session, select
+from datetime import datetime
 from fastapi import HTTPException
 from app.models.core_models import InventarioActual, MovimientoInventario
 
@@ -18,7 +19,10 @@ class InventoryManager:
             stock.cantidad_disponible += cantidad
         elif tipo == 'SALIDA':
             stock.cantidad_disponible -= cantidad
+        elif tipo == 'AJUSTE':
+            stock.cantidad_disponible = cantidad
 
+        stock.ultima_modificacion = datetime.now()
         movimiento = MovimientoInventario(
             producto_id=producto_id,
             empleado_id=empleado_id,

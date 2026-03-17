@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlmodel import Session, select
+from sqlmodel import Session, select, col
 from typing import List
-
 from app.db.database import get_session
-from app.models.core_models import Producto, InventarioActual
+
+from app.models.core_models import Producto, InventarioActual, Impuesto
 from app.schemas.producto_schema import ProductoCreate, ProductoResponse
 
 router = APIRouter(
@@ -12,12 +12,36 @@ router = APIRouter(
 )
 
 
+@router.get("/", response_model=List[ProductoResponse])
+def listar_productos(session: Session = Depends(get_session)):
+    statement = (
+        select(
+            Producto,
+            col(Impuesto.tasa_porcentaje).label("tasa_impuesto"),
+            col(InventarioActual.cantidad_disponible).label("cantidad_disponible")
+        )
+        .join(Impuesto, col(Producto.impuesto_id) == col(Impuesto.id))
+        .outerjoin(InventarioActual, col(Producto.id) == col(InventarioActual.producto_id))
+    )
+
+    results = session.exec(statement).all()
+
+    lista_final = []
+    for producto, tasa, stock in results:
+        p_data = producto.model_dump()
+
+        p_data["tasa_impuesto"] = (tasa / 100) if tasa is not None else 0
+        p_data["cantidad_disponible"] = stock if stock is not None else 0
+        lista_final.append(p_data)
+
+    return lista_final
+
+
 @router.post("/", response_model=ProductoResponse, status_code=201)
 def crear_producto(producto_in: ProductoCreate, session: Session = Depends(get_session)):
     try:
         nuevo_producto = Producto(**producto_in.model_dump())
         session.add(nuevo_producto)
-
         session.flush()
 
         if nuevo_producto.es_inventariable:
@@ -31,37 +55,33 @@ def crear_producto(producto_in: ProductoCreate, session: Session = Depends(get_s
         session.commit()
         session.refresh(nuevo_producto)
 
-        return nuevo_producto
+        return obtener_producto(nuevo_producto.id, session)
 
     except Exception as e:
         session.rollback()
-        raise HTTPException(status_code=400, detail=f"Error al crear producto e inventario: {str(e)}")
-
-@router.get("/", response_model=List[ProductoResponse])
-def listar_productos(session: Session = Depends(get_session)):
-    productos = session.exec(select(Producto)).all()
-    return productos
+        raise HTTPException(status_code=400, detail=f"Error: {str(e)}")
 
 
 @router.get("/{producto_id}", response_model=ProductoResponse)
 def obtener_producto(producto_id: int, session: Session = Depends(get_session)):
-    producto = session.get(Producto, producto_id)
-    if not producto:
+    statement = (
+        select(
+            Producto,
+            col(Impuesto.tasa_porcentaje).label("tasa"),
+            col(InventarioActual.cantidad_disponible).label("stock")
+        )
+        .join(Impuesto, col(Producto.impuesto_id) == col(Impuesto.id))
+        .outerjoin(InventarioActual, col(Producto.id) == col(InventarioActual.producto_id))
+        .where(col(Producto.id) == producto_id)
+    )
+    result = session.exec(statement).first()
+
+    if not result:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
-    return producto
 
+    producto, tasa, stock = result
+    p_data = producto.model_dump()
+    p_data["tasa_impuesto"] = (tasa / 100) if tasa is not None else 0
+    p_data["cantidad_disponible"] = stock if stock is not None else 0
 
-@router.put("/{producto_id}", response_model=ProductoResponse)
-def actualizar_producto(producto_id: int, producto_in: ProductoCreate, session: Session = Depends(get_session)):
-    producto_db = session.get(Producto, producto_id)
-    if not producto_db:
-        raise HTTPException(status_code=404, detail="Producto no encontrado")
-
-    producto_data = producto_in.dict(exclude_unset=True)
-    for key, value in producto_data.items():
-        setattr(producto_db, key, value)
-
-    session.add(producto_db)
-    session.commit()
-    session.refresh(producto_db)
-    return producto_db
+    return p_data

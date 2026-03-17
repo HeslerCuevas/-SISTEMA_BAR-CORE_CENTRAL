@@ -16,6 +16,8 @@ class ProductoCreate(BaseModel):
 
 class ProductoResponse(ProductoCreate):
     id: int
+    tasa_impuesto: Decimal
+    cantidad_disponible: int
     ultima_modificacion: datetime
 
     class Config:

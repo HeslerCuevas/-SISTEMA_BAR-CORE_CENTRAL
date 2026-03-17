@@ -15,16 +15,16 @@ def login(
     statement = select(Empleado).where(Empleado.email == form_data.username)
     empleado = session.exec(statement).first()
 
-    if not empleado or not (form_data.password == empleado.password_hash):
+    if not empleado or form_data.password != empleado.password_hash:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Credenciales incorrectas"
+            detail="Email o contraseña incorrectos"
         )
 
     rol = session.get(Rol, empleado.rol_id)
 
     return {
-        "access_token": "tu_token_generado_aqui", # Lógica de JWT
+        "access_token": empleado.email,
         "token_type": "bearer",
         "nombre": empleado.nombre_completo,
         "rol": rol.nombre if rol else "Sin Rol",

@@ -5,9 +5,8 @@ from fastapi import APIRouter, Depends
 from sqlmodel import Session, select, desc
 
 from app.db.database import get_session
-from app.models.core_models import Producto, InventarioActual, PedidoGlobal
+from app.models.core_models import Producto, InventarioActual, PedidoGlobal, DetallePedido
 from app.schemas.reportes_schema import VentasDiaResponse, RankingProductosResponse, AlertaStockResponse
-from models.core_models import DetallePedido
 
 router = APIRouter(
     prefix="/api/v1/reportes",
