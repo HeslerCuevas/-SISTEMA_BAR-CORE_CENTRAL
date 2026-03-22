@@ -15,11 +15,14 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return bcrypt.checkpw(password_bytes, hashed_bytes)
 
 
-GATEWAY_SECRET = os.getenv("CORE_SECRET_KEY", "v87n34v87tnv39kb23nv7y37vg34v309ung7477")
+GATEWAY_SECRET = os.getenv("CORE_SECRET_KEY")
+
+if not GATEWAY_SECRET:
+    raise RuntimeError("ERROR CRÍTICO: No se encontró CORE_SECRET_KEY en las variables de entorno.")
 
 async def validate_gateway_token(x_gateway_token: str = Header(None)):
     if x_gateway_token != GATEWAY_SECRET:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="No tienes permiso para acceder directamente al CORE. Usa el Gateway."
+            detail="Acceso denegado"
         )
