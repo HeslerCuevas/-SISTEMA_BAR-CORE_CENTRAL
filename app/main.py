@@ -1,11 +1,12 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from sqlmodel import SQLModel
 
 from app.api.routers import productos_router, inventario_router, pedidos_router, reportes_router, sync_catalogos_router, sync_usuarios_router
 from app.db.database import engine
 from app.core.middleware import AuditoriaMiddleware
 from app.services.audit_service import log_auditoria
+from app.core.security import validate_gateway_token
 
 
 @asynccontextmanager
@@ -33,9 +34,10 @@ app = FastAPI(
 )
 
 app.add_middleware(AuditoriaMiddleware)
-app.include_router(productos_router.router)
-app.include_router(inventario_router.router)
-app.include_router(pedidos_router.router)
-app.include_router(reportes_router.router)
-app.include_router(sync_catalogos_router.router)
-app.include_router(sync_usuarios_router.router)
+
+app.include_router(productos_router.router, dependencies=[Depends(validate_gateway_token)])
+app.include_router(inventario_router.router, dependencies=[Depends(validate_gateway_token)])
+app.include_router(pedidos_router.router, dependencies=[Depends(validate_gateway_token)])
+app.include_router(reportes_router.router, dependencies=[Depends(validate_gateway_token)])
+app.include_router(sync_catalogos_router.router, dependencies=[Depends(validate_gateway_token)])
+app.include_router(sync_usuarios_router.router, dependencies=[Depends(validate_gateway_token)])

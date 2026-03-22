@@ -4,6 +4,7 @@ from sqlmodel import Session, select
 from app.db.database import get_session
 from app.models.core_models import Empleado, Rol
 from app.schemas.auth_schema import LoginResponse
+from core.security import verify_password
 
 router = APIRouter(prefix="/auth", tags=["Seguridad"])
 
@@ -15,7 +16,7 @@ def login(
     statement = select(Empleado).where(Empleado.email == form_data.username)
     empleado = session.exec(statement).first()
 
-    if not empleado or form_data.password != empleado.password_hash:
+    if not empleado or not verify_password(form_data.password, empleado.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Email o contraseña incorrectos"
