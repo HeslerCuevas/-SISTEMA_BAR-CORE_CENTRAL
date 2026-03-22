@@ -21,7 +21,8 @@ def registrar_movimiento(mov_in: MovimientoCreate, session: Session = Depends(ge
             cantidad=mov_in.cantidad,
             tipo=mov_in.tipo_movimiento,
             motivo=mov_in.motivo,
-            empleado_id=mov_in.empleado_id
+            empleado_id=mov_in.empleado_id,
+            movimiento_local_uuid=mov_in.movimiento_local_uuid
         )
 
         session.commit()

@@ -7,7 +7,16 @@ from app.models.core_models import InventarioActual, MovimientoInventario
 class InventoryManager:
     @staticmethod
     def registrar_movimiento(session: Session, producto_id: int, cantidad: int, tipo: str, motivo: str,
-                             empleado_id: int = None):
+                             empleado_id: int = None, movimiento_local_uuid: str = None):
+        if movimiento_local_uuid:
+            movimiento_previo = session.exec(
+                select(MovimientoInventario).where(MovimientoInventario.movimiento_local_uuid == movimiento_local_uuid)
+            ).first()
+
+            if movimiento_previo:
+                return
+
+
         stock = session.exec(select(InventarioActual).where(InventarioActual.producto_id == producto_id)).first()
         if not stock:
             stock = InventarioActual(
@@ -29,12 +38,14 @@ class InventoryManager:
             stock.cantidad_disponible = cantidad
 
         stock.ultima_modificacion = datetime.now()
+
         movimiento = MovimientoInventario(
             producto_id=producto_id,
             empleado_id=empleado_id,
             tipo_movimiento=tipo,
             cantidad=cantidad,
-            motivo=motivo
+            motivo=motivo,
+            movimiento_local_uuid = movimiento_local_uuid
         )
 
         session.add(stock)
