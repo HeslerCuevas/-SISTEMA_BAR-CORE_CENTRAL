@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
+import uuid
 
 from app.db.database import get_session
 from app.models.core_models import PedidoGlobal
-from app.schemas.pedidos_schema import PedidoCreate, PedidoResponse
+from app.schemas.pedidos_schema import PedidoCreate, PedidoResponse, CancelarPedidoRequest
 from app.logic.orders_manager import OrdersManager
 from app.logic.sales_manager import SalesManager
 
@@ -62,23 +63,32 @@ def facturar_pedido(id: int, empleado_id: int, session: Session = Depends(get_se
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.post("/{id}/cancelar")
-def cancelar_pedido(id: int, empleado_id: int, motivo: str, session: Session = Depends(get_session)):
+@router.post("/{identificador}/cancelar")
+def cancelar_pedido(
+    identificador: str,
+    datos: CancelarPedidoRequest,
+    session: Session = Depends(get_session)
+):
     try:
+        pedido = session.exec(
+            select(PedidoGlobal).where(PedidoGlobal.factura_local_uuid == identificador)
+        ).first()
+
+        if not pedido:
+            raise HTTPException(status_code=404, detail="Pedido no encontrado con ese UUID local.")
+
         resultado = SalesManager.cancelar_pedido(
             session=session,
-            pedido_id=id,
-            empleado_id=empleado_id,
-            motivo=motivo
+            pedido_id=pedido.id,
+            empleado_id=datos.empleado_id,
+            motivo=datos.motivo
         )
         session.commit()
-        return resultado
-    except HTTPException as e:
-        raise e
+        return {"mensaje": "Cancelación procesada en el CORE", "pedido_id": pedido.id}
+
     except Exception as e:
         session.rollback()
         raise HTTPException(status_code=400, detail=str(e))
-
 
 @router.get("/{id}", response_model=PedidoResponse)
 def obtener_resumen(id: int, session: Session = Depends(get_session)):

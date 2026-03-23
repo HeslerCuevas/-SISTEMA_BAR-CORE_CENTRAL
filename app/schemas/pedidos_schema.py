@@ -45,3 +45,8 @@ class DetallePedidoResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class CancelarPedidoRequest(BaseModel):
+    empleado_id: int
+    motivo: str
