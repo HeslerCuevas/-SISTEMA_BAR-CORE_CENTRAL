@@ -123,6 +123,7 @@ class MovimientoInventario(SQLModel, table=True):
     cantidad: int = Field(sa_column=Column("Cantidad", Integer, nullable=False))
     motivo: str = Field(sa_column=Column("Motivo", String(255), nullable=False))
     fecha_movimiento: datetime = Field(sa_column=Column("FechaMovimiento", DateTime, server_default=text("GETDATE()")))
+    movimiento_local_uuid: Optional[str] = Field(default=None, nullable=True)
 
 
 # --- VENTAS Y TRANSACCIONES ---
