@@ -29,7 +29,8 @@ def crear_pedido_completo(pedido_in: PedidoCreate, session: Session = Depends(ge
             cliente_id=pedido_in.cliente_id,
             empleado_id=pedido_in.empleado_id,
             items=[item.model_dump() for item in pedido_in.detalles],
-            mesa=pedido_in.mesa
+            mesa=pedido_in.mesa,
+            factura_local_uuid = pedido_in.factura_local_uuid
         )
 
         session.commit()

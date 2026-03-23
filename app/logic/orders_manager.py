@@ -3,18 +3,20 @@ from decimal import Decimal
 from fastapi import HTTPException
 from app.models.core_models import PedidoGlobal, DetallePedido, Producto
 from app.logic.inventory_manager import InventoryManager
+import uuid
 
 
 class OrdersManager:
     @staticmethod
     def crear_pedido_completo(session: Session, canal_origen: str, cliente_id: int, empleado_id: int, items: list[dict],
-                              mesa: int = None):
+                              mesa: int = None, factura_local_uuid: uuid.UUID = None):
         nuevo_pedido = PedidoGlobal(
             cliente_id=cliente_id,
             empleado_id=empleado_id,
             canal_origen=canal_origen,
             mesa=mesa,
-            estado="PENDIENTE"
+            estado="PENDIENTE",
+            factura_local_uuid = factura_local_uuid
         )
         session.add(nuevo_pedido)
         session.flush()
