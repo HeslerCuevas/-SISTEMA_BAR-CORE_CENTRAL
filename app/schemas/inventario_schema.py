@@ -8,7 +8,7 @@ class MovimientoCreate(BaseModel):
     tipo_movimiento: Literal["ENTRADA", "SALIDA", "AJUSTE"]
     cantidad: int = Field(..., gt=0, description="La cantidad debe ser mayor a cero")
     motivo: str
-    movimiento_local_uuid: Optional[str] = None
+    factura_local_uuid: Optional[str] = None
 
 class InventarioResponse(BaseModel):
     producto_id: int

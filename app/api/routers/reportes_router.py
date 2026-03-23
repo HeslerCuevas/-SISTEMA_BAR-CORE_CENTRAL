@@ -29,6 +29,15 @@ def get_ventas_hoy(session: Session = Depends(get_session)):
 
     resultado = session.exec(consulta).first()
 
+    if not resultado or resultado[0] is None:
+        return VentasDiaResponse(
+            subtotal=0,
+            total_impuestos=0,
+            propina_legal=0,
+            total_general=0,
+            conteo_pedidos=0
+        )
+
     subtotal, impuestos, propina, total, conteo = resultado
 
     return VentasDiaResponse(
