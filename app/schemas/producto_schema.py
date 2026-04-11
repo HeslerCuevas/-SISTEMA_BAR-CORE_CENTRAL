@@ -22,3 +22,9 @@ class ProductoResponse(ProductoCreate):
 
     class Config:
         from_attributes = True
+
+class CategoriaResponse(BaseModel):
+    id: int
+    nombre: str
+    descripcion: Optional[str] = None
+    activo: bool

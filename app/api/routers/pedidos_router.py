@@ -3,8 +3,8 @@ from sqlmodel import Session, select
 import uuid
 
 from app.db.database import get_session
-from app.models.core_models import PedidoGlobal
-from app.schemas.pedidos_schema import PedidoCreate, PedidoResponse, CancelarPedidoRequest
+from app.models.core_models import PedidoGlobal, DetallePedido
+from app.schemas.pedidos_schema import PedidoCreate, PedidoResponse, CancelarPedidoRequest, AgregarItemsRequest, ResumenCuentaResponse, ItemResumen, SolicitarCuentaRequest
 from app.logic.orders_manager import OrdersManager
 from app.logic.sales_manager import SalesManager
 
@@ -96,3 +96,109 @@ def obtener_resumen(id: int, session: Session = Depends(get_session)):
     if not pedido:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
     return pedido
+
+
+
+@router.patch("/{factura_local_uuid}/agregar-items")
+def agregar_items_a_pedido(
+        factura_local_uuid: str,
+        payload: AgregarItemsRequest,
+        session: Session = Depends(get_session)
+):
+    """Suma nuevos productos a una cuenta que ya está abierta en una mesa."""
+    try:
+        # 1. Buscar el pedido cabecera
+        pedido = session.exec(
+            select(PedidoGlobal).where(PedidoGlobal.factura_local_uuid == factura_local_uuid)
+        ).first()
+
+        if not pedido:
+            raise HTTPException(status_code=404, detail="Pedido no encontrado con ese UUID.")
+
+        if pedido.estado in ["FACTURADO", "CANCELADO"]:
+            raise HTTPException(status_code=400, detail="No se pueden agregar items a un pedido cerrado.")
+
+        # 2. Actualizar totales de la cabecera
+        pedido.subtotal += payload.nuevo_subtotal_agregado
+        pedido.total_impuestos += payload.nuevo_impuesto_agregado
+        pedido.propina_legal = pedido.subtotal * 0.10  # Recalculamos el 10% de ley
+        pedido.total_general = pedido.subtotal + pedido.total_impuestos + pedido.propina_legal
+
+        session.add(pedido)
+
+        # 3. Insertar los nuevos detalles
+        for item in payload.detalles_adicionales:
+            nuevo_detalle = DetallePedido(
+                pedido_id=pedido.id,
+                producto_id=item.producto_id,
+                cantidad=item.cantidad,
+                precio_unitario=item.precio_unitario,
+                monto_impuesto=item.monto_impuesto,
+                subtotal_linea=item.subtotal_linea
+            )
+            session.add(nuevo_detalle)
+
+        session.commit()
+        return {"mensaje": "Items añadidos exitosamente al CORE", "nuevo_total": pedido.total_general}
+
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/{factura_local_uuid}/resumen", response_model=ResumenCuentaResponse)
+def resumen_cuenta_uuid(factura_local_uuid: str, session: Session = Depends(get_session)):
+    """Devuelve el estado financiero y los items de la cuenta para mostrar en la App."""
+    pedido = session.exec(
+        select(PedidoGlobal).where(PedidoGlobal.factura_local_uuid == factura_local_uuid)
+    ).first()
+
+    if not pedido:
+        raise HTTPException(status_code=404, detail="Pedido no encontrado")
+
+    # Obtener los detalles. Ajusta esto si tu relación en SQLAlchemy se llama diferente
+    detalles = session.exec(select(DetallePedido).where(DetallePedido.pedido_id == pedido.id)).all()
+
+    # Mapeo básico para el resumen (Asumiendo que tienes una forma de obtener el nombre del producto)
+    # Si no tienes join con Producto aquí, podrías devolver solo el producto_id por simplicidad.
+    items_list = []
+    for d in detalles:
+        items_list.append(
+            ItemResumen(
+                producto_nombre=f"Producto {d.producto_id}",  # Idealmente hacer join con Producto
+                cantidad=d.cantidad,
+                subtotal_linea=d.subtotal_linea,
+                estado_preparacion="ENTREGADO"
+            )
+        )
+
+    return ResumenCuentaResponse(
+        factura_local_uuid=pedido.factura_local_uuid,
+        estado_cuenta=pedido.estado,
+        subtotal_acumulado=pedido.subtotal,
+        total_impuestos_acumulado=pedido.total_impuestos,
+        propina_legal_acumulada=pedido.propina_legal,
+        total_general_acumulado=pedido.total_general,
+        items_consumidos=items_list
+    )
+
+
+@router.post("/{factura_local_uuid}/solicitar-cuenta")
+def solicitar_cuenta(
+        factura_local_uuid: str,
+        payload: SolicitarCuentaRequest,
+        session: Session = Depends(get_session)
+):
+    """Cambia el estado para que la Caja sepa que debe ir a cobrar."""
+    pedido = session.exec(
+        select(PedidoGlobal).where(PedidoGlobal.factura_local_uuid == factura_local_uuid)
+    ).first()
+
+    if not pedido:
+        raise HTTPException(status_code=404, detail="Pedido no encontrado.")
+
+    pedido.estado = "POR_FACTURAR"
+    session.add(pedido)
+    session.commit()
+
+    return {"mensaje": f"El mesero ha sido notificado para cobrar con {payload.metodo_pago_preferido}"}
