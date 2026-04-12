@@ -90,6 +90,10 @@ class Producto(SQLModel, table=True):
     activo: bool = Field(sa_column=Column("Activo", Boolean, server_default=text("1")))
     ultima_modificacion: datetime = Field(
         sa_column=Column("Ultima_Modificacion", DateTime, server_default=text("GETDATE()")))
+    imagen_url: Optional[str] = Field(
+        default=None,
+        sa_column=Column("ImagenURL", String(1000), nullable=True)
+    )
 
     # Relaciones mapeadas correctamente con los padres
     impuesto: "Impuesto" = Relationship(back_populates="productos")
@@ -150,6 +154,9 @@ class PedidoGlobal(SQLModel, table=True):
     factura_local_uuid: Optional[uuid.UUID] = Field(default=None,
                                                     sa_column=Column("Factura_Local_UUID", UNIQUEIDENTIFIER,
                                                                      index=True))
+    propina_extra: Decimal = Field(default=0.0,
+                                   sa_column=Column("PropinaExtra", Numeric(12, 2), nullable=False,
+                                                    server_default=text("0")))
 
 
 class DetallePedido(SQLModel, table=True):

@@ -9,14 +9,15 @@ import uuid
 class OrdersManager:
     @staticmethod
     def crear_pedido_completo(session: Session, canal_origen: str, cliente_id: int, empleado_id: int, items: list[dict],
-                              mesa: int = None, factura_local_uuid: uuid.UUID = None):
+                              mesa: int = None, factura_local_uuid: uuid.UUID = None, propina_extra: Decimal = Decimal("0.0")):
         nuevo_pedido = PedidoGlobal(
             cliente_id=cliente_id,
             empleado_id=empleado_id,
             canal_origen=canal_origen,
             mesa=mesa,
             estado="PENDIENTE",
-            factura_local_uuid = factura_local_uuid
+            factura_local_uuid = factura_local_uuid,
+            propina_extra=propina_extra
         )
         session.add(nuevo_pedido)
         session.flush()
@@ -62,6 +63,6 @@ class OrdersManager:
         nuevo_pedido.subtotal = subtotal_global
         nuevo_pedido.total_impuestos = impuestos_global
         nuevo_pedido.propina_legal = propina
-        nuevo_pedido.total_general = subtotal_global + impuestos_global + propina
+        nuevo_pedido.total_general = subtotal_global + impuestos_global + propina + propina_extra
 
         return nuevo_pedido

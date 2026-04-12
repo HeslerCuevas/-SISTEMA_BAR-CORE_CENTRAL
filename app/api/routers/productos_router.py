@@ -92,6 +92,7 @@ def listar_productos_por_categoria(categoria_id: int, session: Session = Depends
     lista_final = []
     for producto, tasa, stock in results:
         p_data = producto.model_dump()
+        p_data["imagen_url"] = producto.imagen_url
         p_data["tasa_impuesto"] = (tasa / 100) if tasa is not None else 0
         p_data["cantidad_disponible"] = stock if stock is not None else 0
         lista_final.append(p_data)

@@ -14,6 +14,7 @@ class PedidoCreate(BaseModel):
     cliente_id: Optional[int] = None
     canal_origen: Literal["CAJA", "MOVIL", "WEB"]
     mesa: Optional[int] = None
+    propina_extra: Decimal = 0.0
     factura_local_uuid: Optional[uuid.UUID] = None
     detalles: list[DetallePedidoCreate]
 
@@ -26,6 +27,7 @@ class PedidoResponse(BaseModel):
     propina_legal: Decimal
     subtotal: Decimal
     total_impuestos: Decimal
+    propina_extra: float
     total_general: Decimal
     fecha_creacion: datetime
     factura_local_uuid: Optional[uuid.UUID]
@@ -66,13 +68,13 @@ class DetalleItemAdicional(BaseModel):
 
 class AgregarItemsRequest(BaseModel):
     cliente_id: Optional[int] = None
-    nuevo_subtotal_agregado: float
-    nuevo_impuesto_agregado: float
+    nuevo_subtotal_agregado: Decimal
+    nuevo_impuesto_agregado: Decimal
     detalles_adicionales: List[DetalleItemAdicional]
 
 class SolicitarCuentaRequest(BaseModel):
     metodo_pago_preferido: str = "EFECTIVO" # o TARJETA
-    propina_voluntaria_extra: float = 0.0
+    propina_extra: Decimal = Decimal("0.0")
 
 class ItemResumen(BaseModel):
     producto_nombre: str
@@ -88,3 +90,4 @@ class ResumenCuentaResponse(BaseModel):
     propina_legal_acumulada: float
     total_general_acumulado: float
     items_consumidos: List[ItemResumen]
+    propina_extra_acumulada: float

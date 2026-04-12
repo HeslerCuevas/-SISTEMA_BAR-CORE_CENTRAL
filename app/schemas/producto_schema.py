@@ -13,12 +13,14 @@ class ProductoCreate(BaseModel):
     costo_promedio: Decimal
     es_inventariable: bool = True
     activo: bool = True
+    imagen_url: Optional[str] = None
 
 class ProductoResponse(ProductoCreate):
     id: int
     tasa_impuesto: Decimal
     cantidad_disponible: int
     ultima_modificacion: datetime
+    imagen_url: Optional[str] = None
 
     class Config:
         from_attributes = True
