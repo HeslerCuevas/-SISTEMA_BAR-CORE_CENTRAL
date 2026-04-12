@@ -42,7 +42,8 @@ class OrdersManager:
                 precio_unitario_historico=producto.precio_base,
                 impuesto_historico=tasa,
                 monto_impuesto=monto_impuesto_linea,
-                subtotal_linea=subtotal_linea
+                subtotal_linea=subtotal_linea,
+                detalle_local_uuid=item.get("detalle_local_uuid")
             )
             session.add(detalle)
 
