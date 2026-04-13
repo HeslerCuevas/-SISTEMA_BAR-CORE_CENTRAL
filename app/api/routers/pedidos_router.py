@@ -1,13 +1,18 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 from decimal import Decimal
-import uuid
 
 from app.db.database import get_session
 from app.models.core_models import PedidoGlobal, DetallePedido
 from app.schemas.pedidos_schema import PedidoCreate, PedidoResponse, CancelarPedidoRequest, AgregarItemsRequest, ResumenCuentaResponse, ItemResumen, SolicitarCuentaRequest
 from app.logic.orders_manager import OrdersManager
 from app.logic.sales_manager import SalesManager
+
+from pydantic import BaseModel
+
+
+class FacturarPedidoRequest(BaseModel):
+    empleado_id: int
 
 router = APIRouter(
     prefix="/api/v1/pedidos",
@@ -47,23 +52,41 @@ def crear_pedido_completo(pedido_in: PedidoCreate, session: Session = Depends(ge
         raise HTTPException(status_code=400, detail=f"Error al procesar el pedido: {str(e)}")
 
 
-@router.post("/{id}/facturar", response_model=PedidoResponse)
-def facturar_pedido(id: int, empleado_id: int, session: Session = Depends(get_session)):
+@router.post("/{factura_local_uuid}/facturar", response_model=PedidoResponse)
+def facturar_pedido(
+        factura_local_uuid: str,
+        payload: FacturarPedidoRequest, # ✅ Ahora FastAPI exige y entiende un JSON
+        session: Session = Depends(get_session)
+):
     try:
+        # Buscamos el pedido usando el UUID
+        pedido_global = session.exec(
+            select(PedidoGlobal).where(PedidoGlobal.factura_local_uuid == factura_local_uuid)
+        ).first()
+
+        if not pedido_global:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Pedido con UUID {factura_local_uuid} no encontrado en el CORE."
+            )
+
+        # Pasamos el ID interno y sacamos el empleado_id del payload JSON
         resultado = SalesManager.facturar_pedido(
             session=session,
-            pedido_id=id,
-            empleado_caja_id=empleado_id
+            pedido_id=pedido_global.id,
+            empleado_caja_id=payload.empleado_id
         )
-        session.commit()
 
-        return session.get(PedidoGlobal, id)
+        session.commit()
+        session.refresh(pedido_global)
+
+        return pedido_global
+
     except HTTPException as e:
         raise e
     except Exception as e:
         session.rollback()
         raise HTTPException(status_code=400, detail=str(e))
-
 
 @router.post("/{identificador}/cancelar")
 def cancelar_pedido(
