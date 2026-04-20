@@ -3,7 +3,7 @@ from sqlmodel import Session, select
 from decimal import Decimal
 
 from app.db.database import get_session
-from app.models.core_models import PedidoGlobal, DetallePedido
+from app.models.core_models import PedidoGlobal, DetallePedido, Producto
 from app.schemas.pedidos_schema import PedidoCreate, PedidoResponse, CancelarPedidoRequest, AgregarItemsRequest, ResumenCuentaResponse, ItemResumen, SolicitarCuentaRequest
 from app.logic.orders_manager import OrdersManager
 from app.logic.sales_manager import SalesManager
@@ -55,11 +55,10 @@ def crear_pedido_completo(pedido_in: PedidoCreate, session: Session = Depends(ge
 @router.post("/{factura_local_uuid}/facturar", response_model=PedidoResponse)
 def facturar_pedido(
         factura_local_uuid: str,
-        payload: FacturarPedidoRequest, # ✅ Ahora FastAPI exige y entiende un JSON
+        payload: FacturarPedidoRequest,
         session: Session = Depends(get_session)
 ):
     try:
-        # Buscamos el pedido usando el UUID
         pedido_global = session.exec(
             select(PedidoGlobal).where(PedidoGlobal.factura_local_uuid == factura_local_uuid)
         ).first()
@@ -70,8 +69,7 @@ def facturar_pedido(
                 detail=f"Pedido con UUID {factura_local_uuid} no encontrado en el CORE."
             )
 
-        # Pasamos el ID interno y sacamos el empleado_id del payload JSON
-        resultado = SalesManager.facturar_pedido(
+        SalesManager.facturar_pedido(
             session=session,
             pedido_id=pedido_global.id,
             empleado_caja_id=payload.empleado_id
@@ -88,6 +86,7 @@ def facturar_pedido(
         session.rollback()
         raise HTTPException(status_code=400, detail=str(e))
 
+
 @router.post("/{identificador}/cancelar")
 def cancelar_pedido(
     identificador: str,
@@ -102,12 +101,13 @@ def cancelar_pedido(
         if not pedido:
             raise HTTPException(status_code=404, detail="Pedido no encontrado con ese UUID local.")
 
-        resultado = SalesManager.cancelar_pedido(
+        SalesManager.cancelar_pedido(
             session=session,
             pedido_id=pedido.id,
             empleado_id=datos.empleado_id,
             motivo=datos.motivo
         )
+
         session.commit()
         return {"mensaje": "Cancelación procesada en el CORE", "pedido_id": pedido.id}
 
@@ -115,12 +115,6 @@ def cancelar_pedido(
         session.rollback()
         raise HTTPException(status_code=400, detail=str(e))
 
-@router.get("/{id}", response_model=PedidoResponse)
-def obtener_resumen(id: int, session: Session = Depends(get_session)):
-    pedido = session.get(PedidoGlobal, id)
-    if not pedido:
-        raise HTTPException(status_code=404, detail="Pedido no encontrado")
-    return pedido
 
 
 
@@ -130,9 +124,7 @@ def agregar_items_a_pedido(
         payload: AgregarItemsRequest,
         session: Session = Depends(get_session)
 ):
-    """Suma nuevos productos a una cuenta que ya está abierta en una mesa."""
     try:
-        # 1. Buscar el pedido cabecera
         pedido = session.exec(
             select(PedidoGlobal).where(PedidoGlobal.factura_local_uuid == factura_local_uuid)
         ).first()
@@ -143,7 +135,6 @@ def agregar_items_a_pedido(
         if pedido.estado in ["FACTURADO", "CANCELADO"]:
             raise HTTPException(status_code=400, detail="No se pueden agregar items a un pedido cerrado.")
 
-        # 2. Actualizar totales de la cabecera
         pedido.subtotal += Decimal(str(payload.nuevo_subtotal_agregado))
         pedido.total_impuestos += Decimal(str(payload.nuevo_impuesto_agregado))
         pedido.propina_legal = pedido.subtotal * Decimal("0.10")
@@ -151,15 +142,13 @@ def agregar_items_a_pedido(
 
         session.add(pedido)
 
-        # 3. Insertar los nuevos detalles
         for item in payload.detalles_adicionales:
             nuevo_detalle = DetallePedido(
                 pedido_id=pedido.id,
                 producto_id=item.producto_id,
                 cantidad=item.cantidad,
-                # Corregimos los nombres según tu core_models.py:
                 precio_unitario_historico=item.precio_unitario,
-                impuesto_historico=Decimal("18.00"),  # O el valor que traigas del producto
+                impuesto_historico=Decimal("18.00"),
                 monto_impuesto=item.monto_impuesto,
                 subtotal_linea=item.subtotal_linea,
                 detalle_local_uuid=item.detalle_local_uuid
@@ -176,7 +165,6 @@ def agregar_items_a_pedido(
 
 @router.get("/{factura_local_uuid}/resumen", response_model=ResumenCuentaResponse)
 def resumen_cuenta_uuid(factura_local_uuid: str, session: Session = Depends(get_session)):
-    """Devuelve el estado financiero y los items de la cuenta para mostrar en la App."""
     pedido = session.exec(
         select(PedidoGlobal).where(PedidoGlobal.factura_local_uuid == factura_local_uuid)
     ).first()
@@ -184,18 +172,20 @@ def resumen_cuenta_uuid(factura_local_uuid: str, session: Session = Depends(get_
     if not pedido:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
 
-    # Obtener los detalles. Ajusta esto si tu relación en SQLAlchemy se llama diferente
-    detalles = session.exec(select(DetallePedido).where(DetallePedido.pedido_id == pedido.id)).all()
+    statement = (
+        select(DetallePedido, Producto)
+        .join(Producto, DetallePedido.producto_id == Producto.id)
+        .where(DetallePedido.pedido_id == pedido.id)
+    )
+    resultados = session.exec(statement).all()
 
-    # Mapeo básico para el resumen (Asumiendo que tienes una forma de obtener el nombre del producto)
-    # Si no tienes join con Producto aquí, podrías devolver solo el producto_id por simplicidad.
     items_list = []
-    for d in detalles:
+    for detalle, producto in resultados:
         items_list.append(
             ItemResumen(
-                producto_nombre=f"Producto {d.producto_id}",  # Idealmente hacer join con Producto
-                cantidad=d.cantidad,
-                subtotal_linea=d.subtotal_linea,
+                producto_nombre=producto.nombre,
+                cantidad=detalle.cantidad,
+                subtotal_linea=detalle.subtotal_linea,
                 estado_preparacion="ENTREGADO"
             )
         )
@@ -212,13 +202,24 @@ def resumen_cuenta_uuid(factura_local_uuid: str, session: Session = Depends(get_
     )
 
 
+@router.get("/{factura_local_uuid}", response_model=PedidoResponse)
+def obtener_pedido_por_uuid(factura_local_uuid: str, session: Session = Depends(get_session)):
+    pedido = session.exec(
+        select(PedidoGlobal).where(PedidoGlobal.factura_local_uuid == factura_local_uuid)
+    ).first()
+
+    if not pedido:
+        raise HTTPException(status_code=404, detail="Pedido no encontrado con ese UUID")
+
+    return pedido
+
+
 @router.post("/{factura_local_uuid}/solicitar-cuenta")
 def solicitar_cuenta(
         factura_local_uuid: str,
         payload: SolicitarCuentaRequest,
         session: Session = Depends(get_session)
 ):
-    """Cambia el estado para que la Caja sepa que debe ir a cobrar."""
     pedido = session.exec(
         select(PedidoGlobal).where(PedidoGlobal.factura_local_uuid == factura_local_uuid)
     ).first()

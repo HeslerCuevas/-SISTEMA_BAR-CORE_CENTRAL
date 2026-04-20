@@ -1,6 +1,6 @@
 from sqlmodel import Session, select
 from fastapi import HTTPException
-from app.models.core_models import PedidoGlobal, DetallePedido
+from app.models.core_models import PedidoGlobal, DetallePedido, Producto
 from app.logic.inventory_manager import InventoryManager
 
 
@@ -43,14 +43,18 @@ class SalesManager:
         detalles = session.exec(statement).all()
 
         for item in detalles:
-            InventoryManager.registrar_movimiento(
-                session=session,
-                producto_id=item.producto_id,
-                cantidad=item.cantidad,
-                tipo="ENTRADA",
-                motivo=f"Reversión por Cancelación Pedido #{pedido_id}. Motivo: {motivo}",
-                empleado_id=empleado_id
-            )
+            producto = session.get(Producto, item.producto_id)
+
+            if producto and producto.es_inventariable:
+                InventoryManager.registrar_movimiento(
+                    session=session,
+                    producto_id=item.producto_id,
+                    cantidad=item.cantidad,
+                    tipo="ENTRADA",
+                    motivo=f"Reversión por Cancelación Pedido #{pedido_id}. Motivo: {motivo}",
+                    empleado_id=empleado_id,
+                    factura_local_uuid=pedido.factura_local_uuid
+                )
 
         pedido.estado = "CANCELADO"
         session.add(pedido)

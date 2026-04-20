@@ -5,7 +5,6 @@ from app.models.core_models import PedidoGlobal, DetallePedido, Producto
 from app.logic.inventory_manager import InventoryManager
 import uuid
 
-
 class OrdersManager:
     @staticmethod
     def crear_pedido_completo(session: Session, canal_origen: str, cliente_id: int, empleado_id: int, items: list[dict],
@@ -16,7 +15,7 @@ class OrdersManager:
             canal_origen=canal_origen,
             mesa=mesa,
             estado="PENDIENTE",
-            factura_local_uuid = factura_local_uuid,
+            factura_local_uuid=factura_local_uuid,
             propina_extra=propina_extra
         )
         session.add(nuevo_pedido)
@@ -50,14 +49,16 @@ class OrdersManager:
             subtotal_global += subtotal_linea
             impuestos_global += monto_impuesto_linea
 
-            InventoryManager.registrar_movimiento(
-                session=session,
-                producto_id=producto.id,
-                cantidad=item["cantidad"],
-                tipo="SALIDA",
-                motivo=f"Venta canal {canal_origen} - Pedido #{nuevo_pedido.id}",
-                empleado_id=empleado_id
-            )
+            if producto.es_inventariable:
+                InventoryManager.registrar_movimiento(
+                    session=session,
+                    producto_id=producto.id,
+                    cantidad=item["cantidad"],
+                    tipo="SALIDA",
+                    motivo=f"Venta canal {canal_origen} - Pedido #{nuevo_pedido.id}",
+                    empleado_id=empleado_id,
+                    factura_local_uuid=factura_local_uuid
+                )
 
         propina = subtotal_global * Decimal("0.10")
 

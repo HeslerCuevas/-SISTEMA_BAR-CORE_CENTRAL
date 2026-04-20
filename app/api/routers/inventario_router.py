@@ -3,8 +3,6 @@ from sqlmodel import Session, select
 from app.db.database import get_session
 from app.models.core_models import InventarioActual
 from app.schemas.inventario_schema import MovimientoCreate, InventarioResponse
-
-# IMPORTANTE: Importa tu Manager
 from app.logic.inventory_manager import InventoryManager
 
 router = APIRouter(

@@ -21,6 +21,7 @@ class ProductoResponse(ProductoCreate):
     cantidad_disponible: int
     ultima_modificacion: datetime
     imagen_url: Optional[str] = None
+    id_categoria: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -30,3 +31,8 @@ class CategoriaResponse(BaseModel):
     nombre: str
     descripcion: Optional[str] = None
     activo: bool
+
+class ImpuestoResponse(BaseModel):
+    id: int
+    nombre: str
+    tasa_porcentaje: float

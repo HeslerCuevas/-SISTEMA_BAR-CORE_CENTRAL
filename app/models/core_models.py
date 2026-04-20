@@ -6,9 +6,6 @@ from sqlmodel import SQLModel, Field, Relationship
 from sqlalchemy import Column, String, Integer, ForeignKey, Boolean, DateTime, text, Numeric
 from sqlalchemy.dialects.mssql import UNIQUEIDENTIFIER
 
-
-# --- INFRAESTRUCTURA Y SEGURIDAD ---
-
 class Sucursal(SQLModel, table=True):
     __tablename__ = "Sucursales"
     id: Optional[int] = Field(default=None, sa_column=Column("Id", Integer, primary_key=True))
@@ -46,8 +43,6 @@ class Cliente(SQLModel, table=True):
     activo: bool = Field(sa_column=Column("Activo", Boolean, server_default=text("1")))
 
 
-# --- CATÁLOGO Y PARÁMETROS ---
-
 class Impuesto(SQLModel, table=True):
     __tablename__ = "Impuestos"
     id: Optional[int] = Field(default=None, sa_column=Column("Id", Integer, primary_key=True))
@@ -57,8 +52,6 @@ class Impuesto(SQLModel, table=True):
     ultima_modificacion: datetime = Field(
         sa_column=Column("Ultima_Modificacion", DateTime, server_default=text("GETDATE()"), nullable=False)
     )
-
-    # [FIX]: Relación inversa agregada para satisfacer el back_populates de Producto
     productos: List["Producto"] = Relationship(back_populates="impuesto")
 
 
@@ -71,8 +64,6 @@ class Categoria(SQLModel, table=True):
     ultima_modificacion: datetime = Field(
         sa_column=Column("Ultima_Modificacion", DateTime, server_default=text("GETDATE()"), nullable=False)
     )
-
-    # [FIX]: Relación inversa agregada por consistencia arquitectónica
     productos: List["Producto"] = Relationship(back_populates="categoria")
 
 
@@ -94,13 +85,8 @@ class Producto(SQLModel, table=True):
         default=None,
         sa_column=Column("ImagenURL", String(1000), nullable=True)
     )
-
-    # Relaciones mapeadas correctamente con los padres
     impuesto: "Impuesto" = Relationship(back_populates="productos")
     categoria: "Categoria" = Relationship(back_populates="productos")
-
-
-# --- INVENTARIO ---
 
 class InventarioActual(SQLModel, table=True):
     __tablename__ = "Inventario_Actual"
@@ -128,9 +114,9 @@ class MovimientoInventario(SQLModel, table=True):
     motivo: str = Field(sa_column=Column("Motivo", String(255), nullable=False))
     fecha_movimiento: datetime = Field(sa_column=Column("FechaMovimiento", DateTime, server_default=text("GETDATE()")))
     movimiento_local_uuid: Optional[str] = Field(default=None, nullable=True)
+    factura_local_uuid: Optional[uuid.UUID] = Field(default=None,
+                                                    sa_column=Column("Factura_Local_UUID", UNIQUEIDENTIFIER))
 
-
-# --- VENTAS Y TRANSACCIONES ---
 
 class PedidoGlobal(SQLModel, table=True):
     __tablename__ = "Pedidos_Global"
@@ -175,8 +161,6 @@ class DetallePedido(SQLModel, table=True):
     detalle_local_uuid: Optional[uuid.UUID] = Field(default=None,
                                                     sa_column=Column("Detalle_Local_UUID", UNIQUEIDENTIFIER))
 
-
-# --- AUDITORÍA ---
 
 class CoreLog(SQLModel, table=True):
     __tablename__ = "Core_Logs"

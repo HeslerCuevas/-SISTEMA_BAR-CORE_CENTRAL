@@ -1,5 +1,6 @@
 from sqlmodel import Session, select
 from datetime import datetime
+import uuid
 from fastapi import HTTPException
 from app.models.core_models import InventarioActual, MovimientoInventario
 
@@ -7,7 +8,8 @@ from app.models.core_models import InventarioActual, MovimientoInventario
 class InventoryManager:
     @staticmethod
     def registrar_movimiento(session: Session, producto_id: int, cantidad: int, tipo: str, motivo: str,
-                             empleado_id: int = None, movimiento_local_uuid: str = None):
+                             empleado_id: int = None, movimiento_local_uuid: str = None,
+                             factura_local_uuid: uuid.UUID = None):
         if movimiento_local_uuid:
             movimiento_previo = session.exec(
                 select(MovimientoInventario).where(MovimientoInventario.movimiento_local_uuid == movimiento_local_uuid)
@@ -45,7 +47,8 @@ class InventoryManager:
             tipo_movimiento=tipo,
             cantidad=cantidad,
             motivo=motivo,
-            movimiento_local_uuid = movimiento_local_uuid
+            movimiento_local_uuid = movimiento_local_uuid,
+            factura_local_uuid=factura_local_uuid
         )
 
         session.add(stock)
