@@ -1,10 +1,9 @@
 import qrcode
 import os
 
-# Configuración
 URL_BASE = "https://nocturnal-bar.app/scan"
 SUCURSAL_ID = 1
-CANTIDAD_MESAS = 15  # Cambia esto por la cantidad de mesas que tengas
+CANTIDAD_MESAS = 15
 
 carpeta_qrs = "qrs_mesas"
 if not os.path.exists(carpeta_qrs):
@@ -24,7 +23,6 @@ for mesa_id in range(1, CANTIDAD_MESAS + 1):
     qr.add_data(data)
     qr.make(fit=True)
 
-    # 3. Crear y guardar la imagen
     img = qr.make_image(fill_color="black", back_color="white")
     nombre_archivo = f"{carpeta_qrs}/QR_Sucursal_{SUCURSAL_ID}_Mesa_{mesa_id}.png"
     img.save(nombre_archivo)

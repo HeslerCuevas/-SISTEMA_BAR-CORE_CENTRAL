@@ -57,6 +57,7 @@ class OrdersManager:
                     tipo="SALIDA",
                     motivo=f"Venta canal {canal_origen} - Pedido #{nuevo_pedido.id}",
                     empleado_id=empleado_id,
+                    movimiento_local_uuid=item.get("detalle_local_uuid"),
                     factura_local_uuid=factura_local_uuid
                 )
 

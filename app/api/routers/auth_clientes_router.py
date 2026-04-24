@@ -79,7 +79,10 @@ def login_cliente(
         "email": cliente.email
     }
 
-    access_token = create_access_token(data=token_data)
+    access_token = create_access_token(
+        subject=str(cliente.id),
+        canal="MOVIL"
+    )
 
     return ClienteLoginResponse(
         access_token=access_token,
