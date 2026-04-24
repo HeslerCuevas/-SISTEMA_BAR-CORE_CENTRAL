@@ -73,7 +73,7 @@ class AgregarItemsRequest(BaseModel):
     detalles_adicionales: List[DetalleItemAdicional]
 
 class SolicitarCuentaRequest(BaseModel):
-    metodo_pago_preferido: str = "EFECTIVO" # o TARJETA
+    metodo_pago_preferido: str = "EFECTIVO"
     propina_extra: Decimal = Decimal("0.0")
 
 class ItemResumen(BaseModel):

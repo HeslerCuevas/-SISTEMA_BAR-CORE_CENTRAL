@@ -7,11 +7,15 @@ class Token(BaseModel):
 
 class LoginResponse(BaseModel):
     access_token: str
-    token_type: str
+    token_type: str = "bearer"
+    empleado_id: int
     nombre: str
     rol: str
     sucursal_id: int
-    empleado_id: int
+    activo: bool
+
+    class Config:
+        from_attributes = True
 
 class EmpleadoResponse(BaseModel):
     id: int
