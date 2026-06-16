@@ -4,7 +4,7 @@ from datetime import datetime
 
 from app.db.database import get_session
 from app.models.core_models import Cliente
-from core.security import verify_password, get_password_hash, create_access_token
+from app.core.security import verify_password, get_password_hash, create_access_token
 
 from app.schemas.auth_schema import (
     ClienteRegistroRequest,
