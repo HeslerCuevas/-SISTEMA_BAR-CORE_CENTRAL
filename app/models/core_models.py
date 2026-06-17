@@ -1,9 +1,9 @@
 from typing import Optional, List
 from decimal import Decimal
-from datetime import datetime
+from datetime import datetime, time
 import uuid
 from sqlmodel import SQLModel, Field, Relationship
-from sqlalchemy import Column, String, Integer, ForeignKey, Boolean, DateTime, text, Numeric
+from sqlalchemy import Column, String, Integer, ForeignKey, Boolean, DateTime, text, Numeric, Time
 from sqlalchemy.dialects.mssql import UNIQUEIDENTIFIER
 
 class Sucursal(SQLModel, table=True):
@@ -170,3 +170,112 @@ class CoreLog(SQLModel, table=True):
     origen: str = Field(sa_column=Column("Origen", String(100), nullable=False))
     mensaje: str = Field(sa_column=Column("Mensaje", String, nullable=False))
     data_json: Optional[str] = Field(default=None, sa_column=Column("Data_JSON", String))
+
+
+# ─────────────────────────────────────────────────────────────────
+# NUEVOS MODELOS
+# ─────────────────────────────────────────────────────────────────
+
+class Mesa(SQLModel, table=True):
+    __tablename__ = "Mesas"
+    id: Optional[int] = Field(default=None, sa_column=Column("Id", Integer, primary_key=True))
+    numero: int = Field(sa_column=Column("Numero", Integer, unique=True, nullable=False))
+    descripcion: Optional[str] = Field(default=None, sa_column=Column("Descripcion", String(255)))
+    capacidad: int = Field(default=4, sa_column=Column("Capacidad", Integer, nullable=False, server_default=text("4")))
+    activo: bool = Field(default=True, sa_column=Column("Activo", Boolean, server_default=text("1")))
+    qr_token: Optional[str] = Field(default=None, sa_column=Column("QrToken", String(100)))
+    fecha_creacion: datetime = Field(sa_column=Column("FechaCreacion", DateTime, server_default=text("GETDATE()")))
+
+
+class Promocion(SQLModel, table=True):
+    __tablename__ = "Promociones"
+    id: Optional[int] = Field(default=None, sa_column=Column("Id", Integer, primary_key=True))
+    nombre: str = Field(sa_column=Column("Nombre", String(150), unique=True, nullable=False))
+    descripcion: Optional[str] = Field(default=None, sa_column=Column("Descripcion", String(500)))
+    # PORCENTAJE | MONTO_FIJO
+    tipo_descuento: str = Field(sa_column=Column("TipoDescuento", String(20), nullable=False))
+    valor: Decimal = Field(sa_column=Column("Valor", Numeric(12, 2), nullable=False))
+    fecha_inicio: datetime = Field(sa_column=Column("FechaInicio", DateTime, nullable=False))
+    fecha_fin: Optional[datetime] = Field(default=None, sa_column=Column("FechaFin", DateTime))
+    activo: bool = Field(default=True, sa_column=Column("Activo", Boolean, server_default=text("1")))
+    prioridad: int = Field(default=0, sa_column=Column("Prioridad", Integer, nullable=False, server_default=text("0")))
+    # TODOS | PRODUCTOS | CATEGORIAS
+    aplica_a: str = Field(default="TODOS", sa_column=Column("AplicaA", String(20), nullable=False, server_default=text("'TODOS'")))
+    aplica_happy_hour: bool = Field(default=False, sa_column=Column("AplicaHappyHour", Boolean, server_default=text("0")))
+    hora_inicio_hh: Optional[str] = Field(default=None, sa_column=Column("HoraInicioHH", String(5)))
+    hora_fin_hh: Optional[str] = Field(default=None, sa_column=Column("HoraFinHH", String(5)))
+    fecha_creacion: datetime = Field(sa_column=Column("FechaCreacion", DateTime, server_default=text("GETDATE()")))
+
+
+class PromocionProducto(SQLModel, table=True):
+    __tablename__ = "Promociones_Productos"
+    id: Optional[int] = Field(default=None, sa_column=Column("Id", Integer, primary_key=True))
+    promocion_id: int = Field(sa_column=Column("PromocionId", Integer, ForeignKey("Promociones.Id"), nullable=False))
+    producto_id: int = Field(sa_column=Column("ProductoId", Integer, ForeignKey("Productos.Id"), nullable=False))
+
+
+class PromocionCategoria(SQLModel, table=True):
+    __tablename__ = "Promociones_Categorias"
+    id: Optional[int] = Field(default=None, sa_column=Column("Id", Integer, primary_key=True))
+    promocion_id: int = Field(sa_column=Column("PromocionId", Integer, ForeignKey("Promociones.Id"), nullable=False))
+    categoria_id: int = Field(sa_column=Column("CategoriaId", Integer, ForeignKey("Categorias.Id"), nullable=False))
+
+
+class SecuenciaNcf(SQLModel, table=True):
+    __tablename__ = "Secuencias_NCF"
+    id: Optional[int] = Field(default=None, sa_column=Column("Id", Integer, primary_key=True))
+    tipo_ncf: str = Field(sa_column=Column("TipoNcf", String(10), nullable=False))
+    serie: str = Field(sa_column=Column("Serie", String(10), nullable=False))
+    rango_desde: int = Field(sa_column=Column("RangoDesde", Integer, nullable=False))
+    rango_hasta: int = Field(sa_column=Column("RangoHasta", Integer, nullable=False))
+    secuencia_actual: int = Field(sa_column=Column("SecuenciaActual", Integer, nullable=False))
+    fecha_vencimiento: datetime = Field(sa_column=Column("FechaVencimiento", DateTime, nullable=False))
+    activo: bool = Field(default=True, sa_column=Column("Activo", Boolean, server_default=text("1")))
+    sucursal_id: Optional[int] = Field(default=None, sa_column=Column("SucursalId", Integer, ForeignKey("Sucursales.Id")))
+    fecha_creacion: datetime = Field(sa_column=Column("FechaCreacion", DateTime, server_default=text("GETDATE()")))
+
+
+class HistorialNcf(SQLModel, table=True):
+    __tablename__ = "Historial_NCF"
+    id: Optional[int] = Field(default=None, sa_column=Column("Id", Integer, primary_key=True))
+    secuencia_id: int = Field(sa_column=Column("SecuenciaId", Integer, ForeignKey("Secuencias_NCF.Id"), nullable=False))
+    ncf_asignado: str = Field(sa_column=Column("NcfAsignado", String(20), nullable=False))
+    pedido_id: Optional[int] = Field(default=None, sa_column=Column("PedidoId", Integer, ForeignKey("Pedidos_Global.Id")))
+    empleado_id: Optional[int] = Field(default=None, sa_column=Column("EmpleadoId", Integer, ForeignKey("Empleados.Id")))
+    fecha_asignacion: datetime = Field(sa_column=Column("FechaAsignacion", DateTime, server_default=text("GETDATE()")))
+
+
+class PasswordResetToken(SQLModel, table=True):
+    __tablename__ = "Password_Reset_Tokens"
+    id: Optional[int] = Field(default=None, sa_column=Column("Id", Integer, primary_key=True))
+    token_hash: str = Field(sa_column=Column("TokenHash", String(255), nullable=False, index=True))
+    # EMPLEADO | CLIENTE
+    entidad_tipo: str = Field(sa_column=Column("EntidadTipo", String(20), nullable=False))
+    entidad_id: int = Field(sa_column=Column("EntidadId", Integer, nullable=False))
+    expira_en: datetime = Field(sa_column=Column("ExpiraEn", DateTime, nullable=False))
+    usado: bool = Field(default=False, sa_column=Column("Usado", Boolean, server_default=text("0")))
+    fecha_creacion: datetime = Field(sa_column=Column("FechaCreacion", DateTime, server_default=text("GETDATE()")))
+
+
+class ModificadorItem(SQLModel, table=True):
+    __tablename__ = "Modificadores_Item"
+    id: Optional[int] = Field(default=None, sa_column=Column("Id", Integer, primary_key=True))
+    detalle_pedido_id: int = Field(
+        sa_column=Column("DetallePedidoId", Integer, ForeignKey("Detalles_Pedido.Id"), nullable=False)
+    )
+    descripcion: str = Field(sa_column=Column("Descripcion", String(255), nullable=False))
+    fecha_registro: datetime = Field(sa_column=Column("FechaRegistro", DateTime, server_default=text("GETDATE()")))
+
+
+class DivisionCuenta(SQLModel, table=True):
+    __tablename__ = "Division_Cuenta"
+    id: Optional[int] = Field(default=None, sa_column=Column("Id", Integer, primary_key=True))
+    pedido_id: int = Field(sa_column=Column("PedidoId", Integer, ForeignKey("Pedidos_Global.Id"), nullable=False))
+    numero_partes: int = Field(sa_column=Column("NumeroPartes", Integer, nullable=False))
+    monto_por_parte: Decimal = Field(sa_column=Column("MontoPorParte", Numeric(12, 2), nullable=False))
+    # JSON string con montos personalizados por parte: [{"parte":1,"monto":500},...]
+    montos_personalizados_json: Optional[str] = Field(
+        default=None, sa_column=Column("MontosPersonalizadosJson", String(2000))
+    )
+    empleado_id: Optional[int] = Field(default=None, sa_column=Column("EmpleadoId", Integer, ForeignKey("Empleados.Id")))
+    fecha_division: datetime = Field(sa_column=Column("FechaDivision", DateTime, server_default=text("GETDATE()")))
