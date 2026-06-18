@@ -11,43 +11,14 @@ from app.schemas.producto_schema import (
     ImpuestoCreate, ImpuestoUpdate, ImpuestoResponse
 )
 from app.services.audit_service import log_auditoria
-from app.core.security import oauth2_scheme, verificar_rol_empleado
+from fastapi.security import HTTPAuthorizationCredentials
+from app.core.security import security_bearer, verificar_rol_empleado
 
 router = APIRouter(
     prefix="/api/v1/productos",
     tags=["Módulo de Productos"]
 )
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# HELPER INTERNO
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _obtener_producto_response(producto_id: int, session: Session) -> dict:
-    statement = (
-        select(
-            Producto,
-            col(Impuesto.tasa_porcentaje).label("tasa"),
-            col(InventarioActual.cantidad_disponible).label("stock")
-        )
-        .join(Impuesto, col(Producto.impuesto_id) == col(Impuesto.id))
-        .outerjoin(InventarioActual, col(Producto.id) == col(InventarioActual.producto_id))
-        .where(col(Producto.id) == producto_id)
-    )
-    result = session.exec(statement).first()
-    if not result:
-        raise HTTPException(status_code=404, detail="Producto no encontrado")
-
-    producto, tasa, stock = result
-    p_data = producto.model_dump()
-    p_data["tasa_impuesto"] = (tasa / 100) if tasa is not None else 0
-    p_data["cantidad_disponible"] = 9999 if not producto.es_inventariable else (stock if stock is not None else 0)
-    return p_data
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# PRODUCTOS
-# ─────────────────────────────────────────────────────────────────────────────
 
 @router.get("/", response_model=List[ProductoResponse])
 def listar_productos(
@@ -103,7 +74,15 @@ def listar_productos_por_categoria(categoria_id: int, session: Session = Depends
 
 
 @router.post("/", response_model=ProductoResponse, status_code=201)
-def crear_producto(producto_in: ProductoCreate, session: Session = Depends(get_session)):
+def crear_producto(
+        producto_in: ProductoCreate,
+        session: Session = Depends(get_session),
+        token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)):
+
+    if not token_obj or not token_obj.credentials:
+        raise HTTPException(status_code=401, detail="Token Bearer ausente o inválido")
+    verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE"], session)
+
     try:
         nuevo_producto = Producto(**producto_in.model_dump())
         session.add(nuevo_producto)
@@ -126,86 +105,6 @@ def crear_producto(producto_in: ProductoCreate, session: Session = Depends(get_s
     except Exception as e:
         session.rollback()
         raise HTTPException(status_code=400, detail=f"Error: {str(e)}")
-
-
-@router.get("/{producto_id}", response_model=ProductoResponse)
-def obtener_producto(producto_id: int, session: Session = Depends(get_session)):
-    return _obtener_producto_response(producto_id, session)
-
-
-@router.patch("/{producto_id}", response_model=ProductoResponse)
-def actualizar_producto_parcial(
-    producto_id: int,
-    payload: ProductoUpdate,
-    session: Session = Depends(get_session),
-    token: Optional[str] = Depends(oauth2_scheme)
-):
-    """PATCH — actualización parcial. Solo se modifican los campos enviados."""
-    verificar_rol_empleado(token, ["ADMIN", "GERENTE"], session)
-
-    producto = session.get(Producto, producto_id)
-    if not producto:
-        raise HTTPException(status_code=404, detail="Producto no encontrado.")
-
-    datos = payload.model_dump(exclude_unset=True)
-
-    if "categoria_id" in datos:
-        cat = session.get(Categoria, datos["categoria_id"])
-        if not cat or not cat.activo:
-            raise HTTPException(status_code=404, detail=f"Categoría id={datos['categoria_id']} no existe o está inactiva.")
-
-    if "impuesto_id" in datos:
-        imp = session.get(Impuesto, datos["impuesto_id"])
-        if not imp or not imp.activo:
-            raise HTTPException(status_code=404, detail=f"Impuesto id={datos['impuesto_id']} no existe o está inactivo.")
-
-    for campo, valor in datos.items():
-        setattr(producto, campo, valor)
-
-    producto.ultima_modificacion = datetime.utcnow()
-    session.add(producto)
-    session.commit()
-
-    log_auditoria(
-        nivel="INFO",
-        origen=f"PATCH /api/v1/productos/{producto_id}",
-        mensaje=f"Producto id={producto_id} actualizado parcialmente.",
-        data=datos
-    )
-    return _obtener_producto_response(producto_id, session)
-
-
-@router.delete("/{producto_id}", response_model=dict)
-def desactivar_producto(
-    producto_id: int,
-    session: Session = Depends(get_session),
-    token: Optional[str] = Depends(oauth2_scheme)
-):
-    """Baja lógica del producto. No se elimina físicamente para conservar historial."""
-    verificar_rol_empleado(token, ["ADMIN", "GERENTE"], session)
-
-    producto = session.get(Producto, producto_id)
-    if not producto:
-        raise HTTPException(status_code=404, detail="Producto no encontrado.")
-    if not producto.activo:
-        raise HTTPException(status_code=400, detail="El producto ya está inactivo.")
-
-    producto.activo = False
-    producto.ultima_modificacion = datetime.utcnow()
-    session.add(producto)
-    session.commit()
-
-    log_auditoria(
-        nivel="WARNING",
-        origen=f"DELETE /api/v1/productos/{producto_id}",
-        mensaje=f"Producto desactivado (baja lógica): id={producto_id}, SKU={producto.sku}",
-    )
-    return {
-        "mensaje": f"Producto '{producto.nombre}' desactivado. El historial de pedidos y facturación se conserva.",
-        "id": producto_id,
-        "activo": False
-    }
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CATEGORÍAS
@@ -234,9 +133,12 @@ def obtener_categoria(categoria_id: int, session: Session = Depends(get_session)
 def crear_categoria(
     payload: CategoriaCreate,
     session: Session = Depends(get_session),
-    token: Optional[str] = Depends(oauth2_scheme)
+    token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
 ):
-    verificar_rol_empleado(token, ["ADMIN", "GERENTE"], session)
+    if not token_obj or not token_obj.credentials:
+        raise HTTPException(status_code=401, detail="Token Bearer ausente o inválido")
+
+    verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE"], session)
 
     existente = session.exec(select(Categoria).where(Categoria.nombre == payload.nombre)).first()
     if existente:
@@ -265,9 +167,12 @@ def actualizar_categoria(
     categoria_id: int,
     payload: CategoriaUpdate,
     session: Session = Depends(get_session),
-    token: Optional[str] = Depends(oauth2_scheme)
+    token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
 ):
-    verificar_rol_empleado(token, ["ADMIN", "GERENTE"], session)
+    if not token_obj or not token_obj.credentials:
+        raise HTTPException(status_code=401, detail="Token Bearer ausente o inválido")
+
+    verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE"], session)
 
     cat = session.get(Categoria, categoria_id)
     if not cat:
@@ -306,9 +211,12 @@ def actualizar_categoria(
 def desactivar_categoria(
     categoria_id: int,
     session: Session = Depends(get_session),
-    token: Optional[str] = Depends(oauth2_scheme)
+    token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
 ):
-    verificar_rol_empleado(token, ["ADMIN", "GERENTE"], session)
+    if not token_obj or not token_obj.credentials:
+        raise HTTPException(status_code=401, detail="Token Bearer ausente o inválido")
+
+    verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE"], session)
 
     cat = session.get(Categoria, categoria_id)
     if not cat:
@@ -327,6 +235,28 @@ def desactivar_categoria(
         mensaje=f"Categoría desactivada: id={categoria_id}, nombre='{cat.nombre}'",
     )
     return {"mensaje": f"Categoría '{cat.nombre}' desactivada exitosamente.", "id": categoria_id}
+
+
+def _obtener_producto_response(producto_id: int, session: Session) -> dict:
+    statement = (
+        select(
+            Producto,
+            col(Impuesto.tasa_porcentaje).label("tasa"),
+            col(InventarioActual.cantidad_disponible).label("stock")
+        )
+        .join(Impuesto, col(Producto.impuesto_id) == col(Impuesto.id))
+        .outerjoin(InventarioActual, col(Producto.id) == col(InventarioActual.producto_id))
+        .where(col(Producto.id) == producto_id)
+    )
+    result = session.exec(statement).first()
+    if not result:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+    producto, tasa, stock = result
+    p_data = producto.model_dump()
+    p_data["tasa_impuesto"] = (tasa / 100) if tasa is not None else 0
+    p_data["cantidad_disponible"] = 9999 if not producto.es_inventariable else (stock if stock is not None else 0)
+    return p_data
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -360,9 +290,12 @@ def obtener_impuesto(impuesto_id: int, session: Session = Depends(get_session)):
 def crear_impuesto(
     payload: ImpuestoCreate,
     session: Session = Depends(get_session),
-    token: Optional[str] = Depends(oauth2_scheme)
+    token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
 ):
-    verificar_rol_empleado(token, ["ADMIN", "GERENTE"], session)
+    if not token_obj or not token_obj.credentials:
+        raise HTTPException(status_code=401, detail="Token Bearer ausente o inválido")
+
+    verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE"], session)
 
     existente = session.exec(select(Impuesto).where(Impuesto.nombre == payload.nombre)).first()
     if existente:
@@ -391,9 +324,12 @@ def actualizar_impuesto(
     impuesto_id: int,
     payload: ImpuestoUpdate,
     session: Session = Depends(get_session),
-    token: Optional[str] = Depends(oauth2_scheme)
+    token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
 ):
-    verificar_rol_empleado(token, ["ADMIN", "GERENTE"], session)
+    if not token_obj or not token_obj.credentials:
+        raise HTTPException(status_code=401, detail="Token Bearer ausente o inválido")
+
+    verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE"], session)
 
     imp = session.get(Impuesto, impuesto_id)
     if not imp:
@@ -432,9 +368,12 @@ def actualizar_impuesto(
 def desactivar_impuesto(
     impuesto_id: int,
     session: Session = Depends(get_session),
-    token: Optional[str] = Depends(oauth2_scheme)
+    token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
 ):
-    verificar_rol_empleado(token, ["ADMIN"], session)
+    if not token_obj or not token_obj.credentials:
+        raise HTTPException(status_code=401, detail="Token Bearer ausente o inválido")
+
+    verificar_rol_empleado(token_obj.credentials, ["ADMIN"], session)
 
     imp = session.get(Impuesto, impuesto_id)
     if not imp:
@@ -467,3 +406,90 @@ def desactivar_impuesto(
         mensaje=f"Impuesto desactivado: id={impuesto_id}, nombre='{imp.nombre}'",
     )
     return {"mensaje": f"Impuesto '{imp.nombre}' desactivado exitosamente.", "id": impuesto_id}
+
+
+
+@router.get("/{producto_id}", response_model=ProductoResponse)
+def obtener_producto(producto_id: int, session: Session = Depends(get_session)):
+    return _obtener_producto_response(producto_id, session)
+
+
+@router.patch("/{producto_id}", response_model=ProductoResponse)
+def actualizar_producto_parcial(
+    producto_id: int,
+    payload: ProductoUpdate,
+    session: Session = Depends(get_session),
+    token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
+):
+    if not token_obj or not token_obj.credentials:
+        raise HTTPException(status_code=401, detail="Token Bearer ausente o inválido")
+
+    """PATCH — actualización parcial. Solo se modifican los campos enviados."""
+    verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE"], session)
+
+    producto = session.get(Producto, producto_id)
+    if not producto:
+        raise HTTPException(status_code=404, detail="Producto no encontrado.")
+
+    datos = payload.model_dump(exclude_unset=True)
+
+    if "categoria_id" in datos:
+        cat = session.get(Categoria, datos["categoria_id"])
+        if not cat or not cat.activo:
+            raise HTTPException(status_code=404, detail=f"Categoría id={datos['categoria_id']} no existe o está inactiva.")
+
+    if "impuesto_id" in datos:
+        imp = session.get(Impuesto, datos["impuesto_id"])
+        if not imp or not imp.activo:
+            raise HTTPException(status_code=404, detail=f"Impuesto id={datos['impuesto_id']} no existe o está inactivo.")
+
+    for campo, valor in datos.items():
+        setattr(producto, campo, valor)
+
+    producto.ultima_modificacion = datetime.utcnow()
+    session.add(producto)
+    session.commit()
+
+    log_auditoria(
+        nivel="INFO",
+        origen=f"PATCH /api/v1/productos/{producto_id}",
+        mensaje=f"Producto id={producto_id} actualizado parcialmente.",
+        data=datos
+    )
+    return _obtener_producto_response(producto_id, session)
+
+
+@router.delete("/{producto_id}", response_model=dict)
+def desactivar_producto(
+    producto_id: int,
+    session: Session = Depends(get_session),
+    token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
+):
+    if not token_obj or not token_obj.credentials:
+        raise HTTPException(status_code=401, detail="Token Bearer ausente o inválido")
+
+    """Baja lógica del producto. No se elimina físicamente para conservar historial."""
+    verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE"], session)
+
+    producto = session.get(Producto, producto_id)
+    if not producto:
+        raise HTTPException(status_code=404, detail="Producto no encontrado.")
+    if not producto.activo:
+        raise HTTPException(status_code=400, detail="El producto ya está inactivo.")
+
+    producto.activo = False
+    producto.ultima_modificacion = datetime.utcnow()
+    session.add(producto)
+    session.commit()
+
+    log_auditoria(
+        nivel="WARNING",
+        origen=f"DELETE /api/v1/productos/{producto_id}",
+        mensaje=f"Producto desactivado (baja lógica): id={producto_id}, SKU={producto.sku}",
+    )
+    return {
+        "mensaje": f"Producto '{producto.nombre}' desactivado. El historial de pedidos y facturación se conserva.",
+        "id": producto_id,
+        "activo": False
+    }
+

@@ -1,4 +1,7 @@
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlmodel import Session, select
 from decimal import Decimal
 import json
@@ -17,6 +20,8 @@ from app.logic.sales_manager import SalesManager
 from app.services.audit_service import log_auditoria
 
 from pydantic import BaseModel
+
+from core.security import verificar_rol_empleado, security_bearer
 
 
 class FacturarPedidoRequest(BaseModel):
@@ -279,70 +284,113 @@ def solicitar_cuenta(
 # ─── NUEVOS: Modificadores de ítem ───────────────────────────────────────────
 
 @router.post(
-    "/{factura_local_uuid}/detalles/{detalle_id}/modificadores",
+    "/{factura_local_uuid}/detalles/{detalle_pedido_uuid}/modificadores",
     response_model=ModificadorItemResponse,
     status_code=201
 )
 def agregar_modificador_item(
-    factura_local_uuid: str,
-    detalle_id: int,
-    payload: ModificadorItemRequest,
-    session: Session = Depends(get_session)
+        factura_local_uuid: str,
+        detalle_pedido_uuid: uuid.UUID,
+        payload: ModificadorItemRequest,
+        session: Session = Depends(get_session),
+        token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
 ):
-    """
-    Agrega una instrucción especial a un ítem del pedido.
-    Ejemplos: 'sin hielo', 'doble shot', 'sin sal', 'bien cocido'.
-    """
+    if not token_obj or not token_obj.credentials:
+        raise HTTPException(status_code=401, detail="Token Bearer ausente o inválido")
+
+    empleado_info = verificar_rol_empleado(
+        token_obj.credentials,
+        ["ADMIN", "GERENTE", "MESERO", "CAJERO"],
+        session
+    )
+
+    # 2. Validación de la existencia e integridad del Pedido Global
     pedido = session.exec(
         select(PedidoGlobal).where(PedidoGlobal.factura_local_uuid == factura_local_uuid)
     ).first()
     if not pedido:
-        raise HTTPException(status_code=404, detail="Pedido no encontrado.")
+        raise HTTPException(status_code=404, detail="Pedido maestro no encontrado en el CORE.")
 
+    # Regla de negocio: No alterar comandas ya consolidadas o canceladas
     if pedido.estado in ["FACTURADO", "CANCELADO"]:
-        raise HTTPException(status_code=400, detail="No se pueden agregar modificadores a un pedido cerrado.")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Operación inválida. El pedido se encuentra en estado {pedido.estado}."
+        )
 
-    detalle = session.get(DetallePedido, detalle_id)
+    # 3. Validación del Detalle de Pedido usando el UUID indexado
+    detalle = session.exec(
+        select(DetallePedido).where(DetallePedido.detalle_local_uuid == detalle_pedido_uuid)
+    ).first()
+
     if not detalle or detalle.pedido_id != pedido.id:
-        raise HTTPException(status_code=404, detail="Detalle de pedido no encontrado en este pedido.")
+        raise HTTPException(
+            status_code=404,
+            detail="El ítem (Detalle) especificado no existe o no pertenece a este pedido."
+        )
 
     if not payload.descripcion or not payload.descripcion.strip():
         raise HTTPException(status_code=400, detail="La descripción del modificador no puede estar vacía.")
 
+    # 5. Persistencia
     modificador = ModificadorItem(
-        detalle_pedido_id=detalle_id,
+        detalle_pedido_uuid=detalle.id,  # Mapeo exacto de la variable UUID
         descripcion=payload.descripcion.strip()
     )
-    session.add(modificador)
-    session.commit()
-    session.refresh(modificador)
 
-    return modificador
+    try:
+        session.add(modificador)
+        session.commit()
+        session.refresh(modificador)
+
+        # 6. Registro en el sistema central de Auditoría
+        log_auditoria(
+            nivel="INFO",
+            origen=f"POST /api/v1/pedidos/{factura_local_uuid}/detalles/{detalle_pedido_uuid}/modificadores",
+            mensaje=f"Instrucción especial añadida al ítem: '{modificador.descripcion}'",
+        )
+
+        return modificador
+
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(status_code=500, detail=f"Error al procesar el modificador en DB: {str(e)}")
+
+
+import uuid
 
 
 @router.get(
-    "/{factura_local_uuid}/detalles/{detalle_id}/modificadores",
+    "/{factura_local_uuid}/detalles/{detalle_pedido_uuid}/modificadores",
     response_model=List[ModificadorItemResponse]
 )
 def listar_modificadores_item(
-    factura_local_uuid: str,
-    detalle_id: int,
-    session: Session = Depends(get_session)
+        factura_local_uuid: str,
+        detalle_pedido_uuid: uuid.UUID,  # Cambiado a UUID
+        session: Session = Depends(get_session),
+        token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
 ):
-    """Lista todas las instrucciones especiales de un ítem."""
+    if not token_obj or not token_obj.credentials:
+        raise HTTPException(status_code=401, detail="Token Bearer ausente o inválido")
+    verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE", "MESERO", "CAJERO"], session)
+
     pedido = session.exec(
         select(PedidoGlobal).where(PedidoGlobal.factura_local_uuid == factura_local_uuid)
     ).first()
     if not pedido:
         raise HTTPException(status_code=404, detail="Pedido no encontrado.")
 
-    detalle = session.get(DetallePedido, detalle_id)
+    # Buscar el detalle por su UUID local indexado
+    detalle = session.exec(
+        select(DetallePedido).where(DetallePedido.detalle_local_uuid == detalle_pedido_uuid)
+    ).first()
     if not detalle or detalle.pedido_id != pedido.id:
         raise HTTPException(status_code=404, detail="Detalle de pedido no encontrado.")
 
     modificadores = session.exec(
-        select(ModificadorItem).where(ModificadorItem.detalle_pedido_id == detalle_id)
+        select(ModificadorItem).where(ModificadorItem.detalle_pedido_uuid == detalle_pedido_uuid)
     ).all()
+
     return modificadores
 
 

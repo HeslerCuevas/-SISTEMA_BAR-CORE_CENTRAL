@@ -259,12 +259,22 @@ class PasswordResetToken(SQLModel, table=True):
 
 class ModificadorItem(SQLModel, table=True):
     __tablename__ = "Modificadores_Item"
+
     id: Optional[int] = Field(default=None, sa_column=Column("Id", Integer, primary_key=True))
+
     detalle_pedido_id: int = Field(
-        sa_column=Column("DetallePedidoId", Integer, ForeignKey("Detalles_Pedido.Id"), nullable=False)
+        sa_column=Column(
+            "DetallePedidoId",
+            Integer,
+            ForeignKey("Detalles_Pedido.Id"),
+            nullable=False,
+            index=True
+        )
     )
     descripcion: str = Field(sa_column=Column("Descripcion", String(255), nullable=False))
-    fecha_registro: datetime = Field(sa_column=Column("FechaRegistro", DateTime, server_default=text("GETDATE()")))
+    fecha_registro: datetime = Field(
+        sa_column=Column("FechaRegistro", DateTime, server_default=text("GETDATE()"))
+    )
 
 
 class DivisionCuenta(SQLModel, table=True):
@@ -278,4 +288,4 @@ class DivisionCuenta(SQLModel, table=True):
         default=None, sa_column=Column("MontosPersonalizadosJson", String(2000))
     )
     empleado_id: Optional[int] = Field(default=None, sa_column=Column("EmpleadoId", Integer, ForeignKey("Empleados.Id")))
-    fecha_division: datetime = Field(sa_column=Column("FechaDivision", DateTime, server_default=text("GETDATE()")))
+    fecha_division: datetime = Field(sa_column=Column("FechaDivision", DateTime, server_default=text("GETDATE()")))

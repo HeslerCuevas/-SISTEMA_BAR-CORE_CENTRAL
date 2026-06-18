@@ -6,15 +6,12 @@ import hashlib
 import secrets
 
 from app.db.database import get_session
-<<<<<<< HEAD
-from app.models.core_models import Cliente, PasswordResetToken
-from app.core.security import verify_password, get_password_hash, create_access_token, oauth2_scheme, decode_access_token
+from app.models.core_models import PasswordResetToken
+from app.core.security import oauth2_scheme, decode_access_token
 from app.services.audit_service import log_auditoria
 from app.services.email_service import enviar_email_reset_password
-=======
 from app.models.core_models import Cliente
 from app.core.security import verify_password, get_password_hash, create_access_token
->>>>>>> b2d709606e0c3fe918010d533e7c89969afe0188
 
 from app.schemas.auth_schema import (
     ClienteRegistroRequest,

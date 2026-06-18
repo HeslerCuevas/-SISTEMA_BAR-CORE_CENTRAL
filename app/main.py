@@ -9,7 +9,7 @@ from app.api.routers import clientes_admin_router, promociones_router, ncf_route
 from app.db.database import engine
 from app.core.middleware import AuditoriaMiddleware
 from app.services.audit_service import log_auditoria
-from app.core.security import validate_gateway_token
+from app.core.security import validate_gateway_token, security_bearer
 from fastapi.security import APIKeyHeader
 
 
@@ -60,6 +60,7 @@ app.include_router(promociones_router.router, dependencies=[Depends(validate_gat
 app.include_router(ncf_router.router, dependencies=[Depends(validate_gateway_token)])
 
 
+
 from fastapi.openapi.utils import get_openapi
 
 def custom_openapi():
@@ -76,35 +77,26 @@ def custom_openapi():
     if "components" not in openapi_schema:
         openapi_schema["components"] = {}
 
-    # 1. Definimos los componentes usando nombres normalizados
     openapi_schema["components"]["securitySchemes"] = {
         "GatewayTokenAuth": {
             "type": "apiKey",
             "in": "header",
-            "name": "x-gateway-token",  # Usamos minúsculas estándar para evitar duplicados en curl
+            "name": "x-gateway-token",
             "description": "Introduce el token secreto del Gateway (CORE_SECRET_KEY)"
         },
-        "OAuth2PasswordBearer": {
-            "type": "oauth2",
-            "flows": {
-                "password": {
-                    "tokenUrl": "/api/v1/auth/login",
-                    "scopes": {}
-                }
-            }
+        # IMPORTANTE: El nombre debe ser exactamente "HTTPBearer" para que coincida con FastAPI
+        "HTTPBearer": {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "JWT",
+            "description": "Pega aquí el access_token generado en el endpoint /login"
         }
     }
 
-    # 2. Declaramos la seguridad secuencial alternativa.
-    # Esto le dice a Swagger que CUALQUIER endpoint puede validarse con la combinación
-    # [Gateway + Bearer] O con [Solo Gateway] (para permitir el login inicial).
     openapi_schema["security"] = [
         {
             "GatewayTokenAuth": [],
-            "OAuth2PasswordBearer": []
-        },
-        {
-            "GatewayTokenAuth": []
+            "HTTPBearer": [] # Coincide con el nombre de arriba
         }
     ]
 
