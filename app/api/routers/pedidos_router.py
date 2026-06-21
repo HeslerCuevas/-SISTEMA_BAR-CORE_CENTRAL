@@ -1,24 +1,71 @@
-from fastapi import APIRouter, Depends, HTTPException
+import uuid
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlmodel import Session, select
 from decimal import Decimal
+import json
+from typing import List, Optional
 
 from app.db.database import get_session
-from app.models.core_models import PedidoGlobal, DetallePedido, Producto
-from app.schemas.pedidos_schema import PedidoCreate, PedidoResponse, CancelarPedidoRequest, AgregarItemsRequest, ResumenCuentaResponse, ItemResumen, SolicitarCuentaRequest
+from app.models.core_models import (
+    PedidoGlobal, DetallePedido, Producto, ModificadorItem, DivisionCuenta
+)
+from app.schemas.pedidos_schema import (
+    PedidoCreate, PedidoResponse, CancelarPedidoRequest, AgregarItemsRequest,
+    ResumenCuentaResponse, ItemResumen, SolicitarCuentaRequest
+)
 from app.logic.orders_manager import OrdersManager
 from app.logic.sales_manager import SalesManager
+from app.services.audit_service import log_auditoria
 
 from pydantic import BaseModel
+
+from core.security import verificar_rol_empleado, security_bearer
 
 
 class FacturarPedidoRequest(BaseModel):
     empleado_id: int
+
+
+class ModificadorItemRequest(BaseModel):
+    """Instrucciones especiales para un ítem (ej: 'sin hielo', 'doble shot')."""
+    descripcion: str
+
+
+class ModificadorItemResponse(BaseModel):
+    id: int
+    detalle_pedido_id: int
+    descripcion: str
+
+    class Config:
+        from_attributes = True
+
+
+class SplitBillRequest(BaseModel):
+    """Solicitud de división de cuenta."""
+    numero_partes: int
+    montos_personalizados: Optional[List[float]] = None
+    empleado_id: Optional[int] = None
+
+
+class SplitBillResponse(BaseModel):
+    pedido_id: int
+    factura_local_uuid: Optional[str]
+    total_general: Decimal
+    numero_partes: int
+    monto_por_parte: Decimal
+    partes: List[dict]
+    division_id: int
+
 
 router = APIRouter(
     prefix="/api/v1/pedidos",
     tags=["Módulo de Pedidos"]
 )
 
+
+# ─── Endpoints existentes (sin modificar) ──────────────────────────────────────
 
 @router.post("/", response_model=PedidoResponse)
 def crear_pedido_completo(pedido_in: PedidoCreate, session: Session = Depends(get_session)):
@@ -37,7 +84,7 @@ def crear_pedido_completo(pedido_in: PedidoCreate, session: Session = Depends(ge
             empleado_id=pedido_in.empleado_id,
             items=[item.model_dump() for item in pedido_in.detalles],
             mesa=pedido_in.mesa,
-            factura_local_uuid = pedido_in.factura_local_uuid,
+            factura_local_uuid=pedido_in.factura_local_uuid,
             propina_extra=pedido_in.propina_extra
         )
 
@@ -54,9 +101,9 @@ def crear_pedido_completo(pedido_in: PedidoCreate, session: Session = Depends(ge
 
 @router.post("/{factura_local_uuid}/facturar", response_model=PedidoResponse)
 def facturar_pedido(
-        factura_local_uuid: str,
-        payload: FacturarPedidoRequest,
-        session: Session = Depends(get_session)
+    factura_local_uuid: str,
+    payload: FacturarPedidoRequest,
+    session: Session = Depends(get_session)
 ):
     try:
         pedido_global = session.exec(
@@ -77,7 +124,6 @@ def facturar_pedido(
 
         session.commit()
         session.refresh(pedido_global)
-
         return pedido_global
 
     except HTTPException as e:
@@ -116,13 +162,11 @@ def cancelar_pedido(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-
-
 @router.patch("/{factura_local_uuid}/agregar-items")
 def agregar_items_a_pedido(
-        factura_local_uuid: str,
-        payload: AgregarItemsRequest,
-        session: Session = Depends(get_session)
+    factura_local_uuid: str,
+    payload: AgregarItemsRequest,
+    session: Session = Depends(get_session)
 ):
     try:
         pedido = session.exec(
@@ -216,9 +260,9 @@ def obtener_pedido_por_uuid(factura_local_uuid: str, session: Session = Depends(
 
 @router.post("/{factura_local_uuid}/solicitar-cuenta")
 def solicitar_cuenta(
-        factura_local_uuid: str,
-        payload: SolicitarCuentaRequest,
-        session: Session = Depends(get_session)
+    factura_local_uuid: str,
+    payload: SolicitarCuentaRequest,
+    session: Session = Depends(get_session)
 ):
     pedido = session.exec(
         select(PedidoGlobal).where(PedidoGlobal.factura_local_uuid == factura_local_uuid)
@@ -235,3 +279,237 @@ def solicitar_cuenta(
     session.commit()
 
     return {"mensaje": f"El mesero ha sido notificado para cobrar con {payload.metodo_pago_preferido}"}
+
+
+# ─── NUEVOS: Modificadores de ítem ───────────────────────────────────────────
+
+@router.post(
+    "/{factura_local_uuid}/detalles/{detalle_pedido_uuid}/modificadores",
+    response_model=ModificadorItemResponse,
+    status_code=201
+)
+def agregar_modificador_item(
+        factura_local_uuid: str,
+        detalle_pedido_uuid: uuid.UUID,
+        payload: ModificadorItemRequest,
+        session: Session = Depends(get_session),
+        token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
+):
+    if not token_obj or not token_obj.credentials:
+        raise HTTPException(status_code=401, detail="Token Bearer ausente o inválido")
+
+    empleado_info = verificar_rol_empleado(
+        token_obj.credentials,
+        ["ADMIN", "GERENTE", "MESERO", "CAJERO"],
+        session
+    )
+
+    # 2. Validación de la existencia e integridad del Pedido Global
+    pedido = session.exec(
+        select(PedidoGlobal).where(PedidoGlobal.factura_local_uuid == factura_local_uuid)
+    ).first()
+    if not pedido:
+        raise HTTPException(status_code=404, detail="Pedido maestro no encontrado en el CORE.")
+
+    # Regla de negocio: No alterar comandas ya consolidadas o canceladas
+    if pedido.estado in ["FACTURADO", "CANCELADO"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Operación inválida. El pedido se encuentra en estado {pedido.estado}."
+        )
+
+    # 3. Validación del Detalle de Pedido usando el UUID indexado
+    detalle = session.exec(
+        select(DetallePedido).where(DetallePedido.detalle_local_uuid == detalle_pedido_uuid)
+    ).first()
+
+    if not detalle or detalle.pedido_id != pedido.id:
+        raise HTTPException(
+            status_code=404,
+            detail="El ítem (Detalle) especificado no existe o no pertenece a este pedido."
+        )
+
+    if not payload.descripcion or not payload.descripcion.strip():
+        raise HTTPException(status_code=400, detail="La descripción del modificador no puede estar vacía.")
+
+    # 5. Persistencia
+    modificador = ModificadorItem(
+        detalle_pedido_uuid=detalle.id,  # Mapeo exacto de la variable UUID
+        descripcion=payload.descripcion.strip()
+    )
+
+    try:
+        session.add(modificador)
+        session.commit()
+        session.refresh(modificador)
+
+        # 6. Registro en el sistema central de Auditoría
+        log_auditoria(
+            nivel="INFO",
+            origen=f"POST /api/v1/pedidos/{factura_local_uuid}/detalles/{detalle_pedido_uuid}/modificadores",
+            mensaje=f"Instrucción especial añadida al ítem: '{modificador.descripcion}'",
+        )
+
+        return modificador
+
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(status_code=500, detail=f"Error al procesar el modificador en DB: {str(e)}")
+
+
+import uuid
+
+
+@router.get(
+    "/{factura_local_uuid}/detalles/{detalle_pedido_uuid}/modificadores",
+    response_model=List[ModificadorItemResponse]
+)
+def listar_modificadores_item(
+        factura_local_uuid: str,
+        detalle_pedido_uuid: uuid.UUID,  # Cambiado a UUID
+        session: Session = Depends(get_session),
+        token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
+):
+    if not token_obj or not token_obj.credentials:
+        raise HTTPException(status_code=401, detail="Token Bearer ausente o inválido")
+    verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE", "MESERO", "CAJERO"], session)
+
+    pedido = session.exec(
+        select(PedidoGlobal).where(PedidoGlobal.factura_local_uuid == factura_local_uuid)
+    ).first()
+    if not pedido:
+        raise HTTPException(status_code=404, detail="Pedido no encontrado.")
+
+    # Buscar el detalle por su UUID local indexado
+    detalle = session.exec(
+        select(DetallePedido).where(DetallePedido.detalle_local_uuid == detalle_pedido_uuid)
+    ).first()
+    if not detalle or detalle.pedido_id != pedido.id:
+        raise HTTPException(status_code=404, detail="Detalle de pedido no encontrado.")
+
+    modificadores = session.exec(
+        select(ModificadorItem).where(ModificadorItem.detalle_pedido_uuid == detalle_pedido_uuid)
+    ).all()
+
+    return modificadores
+
+
+# ─── NUEVOS: División de cuenta (Split Bill) ────────────────────────────────
+
+@router.post("/{factura_local_uuid}/dividir-cuenta", response_model=SplitBillResponse)
+def dividir_cuenta(
+    factura_local_uuid: str,
+    payload: SplitBillRequest,
+    session: Session = Depends(get_session)
+):
+    """
+    Divide la cuenta de un pedido en N partes iguales o con montos personalizados.
+    
+    - numero_partes: Cuántas partes se divide la cuenta.
+    - montos_personalizados: Lista opcional con el monto de cada parte.
+      Si no se envía, se divide en partes iguales.
+    """
+    if payload.numero_partes < 2:
+        raise HTTPException(status_code=400, detail="Se requieren al menos 2 partes para dividir la cuenta.")
+
+    pedido = session.exec(
+        select(PedidoGlobal).where(PedidoGlobal.factura_local_uuid == factura_local_uuid)
+    ).first()
+    if not pedido:
+        raise HTTPException(status_code=404, detail="Pedido no encontrado.")
+
+    if pedido.estado in ["FACTURADO", "CANCELADO"]:
+        raise HTTPException(status_code=400, detail="No se puede dividir una cuenta ya cerrada.")
+
+    total = pedido.total_general
+
+    if payload.montos_personalizados:
+        if len(payload.montos_personalizados) != payload.numero_partes:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Se esperan {payload.numero_partes} montos personalizados, se enviaron {len(payload.montos_personalizados)}."
+            )
+        suma = sum(Decimal(str(m)) for m in payload.montos_personalizados)
+        if abs(suma - total) > Decimal("0.10"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"La suma de los montos personalizados ({suma}) no coincide con el total ({total})."
+            )
+        monto_por_parte = Decimal(str(payload.montos_personalizados[0]))
+        partes = [
+            {"parte": i + 1, "monto": float(Decimal(str(payload.montos_personalizados[i])))} 
+            for i in range(payload.numero_partes)
+        ]
+        montos_json = json.dumps(partes)
+    else:
+        # División igualitaria con centavos al último
+        monto_base = (total / payload.numero_partes).quantize(Decimal("0.01"))
+        monto_ultimo = total - (monto_base * (payload.numero_partes - 1))
+        monto_por_parte = monto_base
+        partes = [
+            {"parte": i + 1, "monto": float(monto_base) if i < payload.numero_partes - 1 else float(monto_ultimo)}
+            for i in range(payload.numero_partes)
+        ]
+        montos_json = json.dumps(partes)
+
+    division = DivisionCuenta(
+        pedido_id=pedido.id,
+        numero_partes=payload.numero_partes,
+        monto_por_parte=monto_por_parte,
+        montos_personalizados_json=montos_json,
+        empleado_id=payload.empleado_id
+    )
+    session.add(division)
+    session.commit()
+    session.refresh(division)
+
+    log_auditoria(
+        nivel="INFO",
+        origen=f"POST /api/v1/pedidos/{factura_local_uuid}/dividir-cuenta",
+        mensaje=f"Cuenta dividida en {payload.numero_partes} partes. Pedido id={pedido.id}",
+        data={"total": float(total), "partes": partes}
+    )
+
+    return SplitBillResponse(
+        pedido_id=pedido.id,
+        factura_local_uuid=str(factura_local_uuid),
+        total_general=total,
+        numero_partes=payload.numero_partes,
+        monto_por_parte=monto_por_parte,
+        partes=partes,
+        division_id=division.id
+    )
+
+
+@router.get("/{factura_local_uuid}/division-cuenta", response_model=SplitBillResponse)
+def obtener_division_cuenta(
+    factura_local_uuid: str,
+    session: Session = Depends(get_session)
+):
+    """Consulta la división de cuenta existente para un pedido."""
+    pedido = session.exec(
+        select(PedidoGlobal).where(PedidoGlobal.factura_local_uuid == factura_local_uuid)
+    ).first()
+    if not pedido:
+        raise HTTPException(status_code=404, detail="Pedido no encontrado.")
+
+    division = session.exec(
+        select(DivisionCuenta)
+        .where(DivisionCuenta.pedido_id == pedido.id)
+        .order_by(DivisionCuenta.id.desc())
+    ).first()
+
+    if not division:
+        raise HTTPException(status_code=404, detail="Este pedido no tiene una división de cuenta registrada.")
+
+    partes = json.loads(division.montos_personalizados_json) if division.montos_personalizados_json else []
+
+    return SplitBillResponse(
+        pedido_id=pedido.id,
+        factura_local_uuid=str(factura_local_uuid),
+        total_general=pedido.total_general,
+        numero_partes=division.numero_partes,
+        monto_por_parte=division.monto_por_parte,
+        partes=partes,
+        division_id=division.id
+    )

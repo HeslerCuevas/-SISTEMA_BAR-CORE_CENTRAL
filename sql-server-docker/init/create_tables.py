@@ -29,6 +29,15 @@ from models import (  # noqa: F401
     PedidoGlobal,
     DetallePedido,
     CoreLog,
+    DivisionCuenta,
+    Promocion,
+    ModificadorItem,
+    PasswordResetToken,
+    HistorialNcf,
+    SecuenciaNcf,
+    PromocionProducto,
+    PromocionCategoria,
+    Mesa
 )
 
 env_path = Path(__file__).resolve().parent.parent / ".env"
