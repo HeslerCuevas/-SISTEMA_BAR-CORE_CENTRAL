@@ -21,7 +21,7 @@ from app.services.audit_service import log_auditoria
 
 from pydantic import BaseModel
 
-from core.security import verificar_rol_empleado, security_bearer
+from app.core.security import verificar_rol_empleado, security_bearer
 
 
 class FacturarPedidoRequest(BaseModel):
