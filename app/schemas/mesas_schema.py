@@ -1,13 +1,13 @@
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 import uuid
 
 
-# ─── Schemas existentes (QR / Mobile flow) ────────────────────────────────────
+# ─── SCHEMAS MÓVILES (Flujo QR Protegido) ─────────────────────────────────────
 
 class MesaVincularRequest(BaseModel):
-    codigo_qr_mesa: str
-    numero_mesa: int
+    # Se elimina 'numero_mesa' para evitar que usuarios adivinen IDs de mesas remotamente
+    codigo_qr_mesa: str = Field(..., description="Token seguro extraído del código QR de la mesa física")
 
 
 class MesaVincularResponse(BaseModel):
@@ -18,14 +18,16 @@ class MesaVincularResponse(BaseModel):
 
 
 class LlamarMeseroRequest(BaseModel):
-    motivo_llamada: str = "ASISTENCIA_GENERAL"
+    # Obligatorio para asegurar presencia física al llamar al personal
+    qr_token: str = Field(..., description="Token de validación del QR de la mesa")
+    motivo_llamada: str = Field(default="ASISTENCIA_GENERAL", description="Ej: CUENTA, ORDENAR, ASISTENCIA_GENERAL")
 
 
 class LlamarMeseroResponse(BaseModel):
     mensaje: str
 
 
-# ─── Schemas administrativos ──────────────────────────────────────────────────
+# ─── SCHEMAS ADMINISTRATIVOS (CRUD CORE) ──────────────────────────────────────
 
 class MesaCreate(BaseModel):
     numero: int
@@ -60,7 +62,7 @@ class MesaAdminResponse(BaseModel):
     descripcion: Optional[str] = None
     capacidad: int
     activo: bool
-    qr_token: Optional[str] = None
+    qr_token: Optional[str] = None # Expone el token generado para la impresión del QR físico
 
     class Config:
         from_attributes = True

@@ -40,19 +40,19 @@ def enviar_email_reset_password(email_destino: str, token: str, tipo: str = "emp
     reset_link = f"{FRONTEND_URL}/{ruta}?token={token}"
 
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = "Recuperación de Contraseña — CORE Bar & Lounge"
+    msg["Subject"] = "Password Recovery — CORE Bar & Lounge"
     msg["From"] = SMTP_FROM
     msg["To"] = email_destino
 
     texto_plain = f"""
-Hola,
+Hello,
 
-Recibiste este correo porque se solicitó restablecer la contraseña de tu cuenta.
+You received this email because a password reset was requested for your account.
 
-Haz clic en el siguiente enlace para continuar (expira en 30 minutos):
+Click the following link to continue (expires in 30 minutes):
 {reset_link}
 
-Si no solicitaste este cambio, ignora este mensaje.
+If you did not request this change, please ignore this message.
 
 — CORE Bar & Lounge
 """
@@ -60,21 +60,21 @@ Si no solicitaste este cambio, ignora este mensaje.
     texto_html = f"""
 <html>
 <body style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px;">
-  <h2 style="color: #333;">Recuperación de Contraseña</h2>
-  <p>Recibiste este correo porque se solicitó restablecer la contraseña de tu cuenta.</p>
-  <p>Haz clic en el siguiente botón para continuar (expira en <strong>30 minutos</strong>):</p>
+  <h2 style="color: #333;">Password Recovery</h2>
+  <p>You received this email because a password reset was requested for your account.</p>
+  <p>Click the button below to continue (expires in <strong>30 minutes</strong>):</p>
   <p style="text-align:center; margin: 30px 0;">
     <a href="{reset_link}"
        style="background:#1a1a2e;color:#fff;padding:14px 28px;border-radius:6px;
               text-decoration:none;font-size:16px;">
-      Restablecer Contraseña
+      Reset Password
     </a>
   </p>
   <p style="color:#888;font-size:12px;">
-    Si no solicitaste este cambio, ignora este mensaje. El enlace expirará automáticamente.
+    If you did not request this change, please ignore this message. The link will expire automatically.
   </p>
   <hr style="border:none;border-top:1px solid #eee;margin-top:30px;">
-  <p style="color:#aaa;font-size:11px;">CORE Bar &amp; Lounge — Sistema de Gestión</p>
+  <p style="color:#aaa;font-size:11px;">CORE Bar &amp; Lounge — Management System</p>
 </body>
 </html>
 """

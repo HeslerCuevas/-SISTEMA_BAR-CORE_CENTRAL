@@ -1,12 +1,13 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlmodel import Session, select, col
 
 from app.db.database import get_session
 from app.models.core_models import Empleado, Rol, Sucursal
-from app.schemas.empleados_schema import EmpleadoCreate, EmpleadoAdminResponse, EmpleadoDesactivarResponse
+from app.schemas.empleados_schema import EmpleadoCreate, EmpleadoUpdate, EmpleadoAdminResponse, EmpleadoDesactivarResponse
 from app.services.audit_service import log_auditoria
-from app.core.security import get_password_hash, oauth2_scheme, verificar_rol_empleado
+from app.core.security import get_password_hash, oauth2_scheme, verificar_rol_empleado, security_bearer
 
 router = APIRouter(prefix="/api/v1/empleados", tags=["Gestión de Personal"])
 
@@ -15,7 +16,7 @@ router = APIRouter(prefix="/api/v1/empleados", tags=["Gestión de Personal"])
 def obtener_todos_los_empleados(
     incluir_inactivos: bool = Query(False, description="Incluir empleados inactivos"),
     db: Session = Depends(get_session),
-    token: Optional[str] = Depends(oauth2_scheme)
+    token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
 ):
     verificar_rol_empleado(token, ["ADMIN", "GERENTE"], db)
     stmt = select(Empleado)
@@ -28,7 +29,7 @@ def obtener_todos_los_empleados(
 def obtener_empleado(
     empleado_id: int,
     db: Session = Depends(get_session),
-    token: Optional[str] = Depends(oauth2_scheme)
+    token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
 ):
     verificar_rol_empleado(token, ["ADMIN", "GERENTE"], db)
     empleado = db.get(Empleado, empleado_id)
@@ -41,9 +42,12 @@ def obtener_empleado(
 def crear_empleado(
     payload: EmpleadoCreate,
     db: Session = Depends(get_session),
-    token: Optional[str] = Depends(oauth2_scheme)
+    token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
 ):
-    info = verificar_rol_empleado(token, ["ADMIN", "GERENTE"], db)
+    if not token_obj or not token_obj.credentials:
+        raise HTTPException(status_code=401, detail="Token Bearer ausente o inválido")
+
+    info = verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE"], db)
 
     # Validar email único
     if db.exec(select(Empleado).where(Empleado.email == payload.email)).first():
@@ -85,13 +89,70 @@ def crear_empleado(
     return nuevo_empleado
 
 
+@router.patch("/{empleado_id}", response_model=EmpleadoAdminResponse)
+def actualizar_empleado(
+    empleado_id: int,
+    payload: EmpleadoUpdate,
+    db: Session = Depends(get_session),
+    token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
+):
+    if not token_obj or not token_obj.credentials:
+        raise HTTPException(status_code=401, detail="Token Bearer ausente o inválido")
+
+    info = verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE"], db)
+
+    empleado = db.get(Empleado, empleado_id)
+    if not empleado:
+        raise HTTPException(status_code=404, detail="Empleado no encontrado.")
+
+    datos = payload.model_dump(exclude_unset=True)
+
+    if "email" in datos:
+        existente = db.exec(select(Empleado).where(Empleado.email == datos["email"], col(Empleado.id) != empleado_id)).first()
+        if existente:
+            raise HTTPException(status_code=400, detail="El email ya está en uso por otro empleado.")
+
+    if "documento_identidad" in datos:
+        existente = db.exec(select(Empleado).where(Empleado.documento_identidad == datos["documento_identidad"], col(Empleado.id) != empleado_id)).first()
+        if existente:
+            raise HTTPException(status_code=400, detail="El documento de identidad ya está registrado por otro empleado.")
+
+    if "rol_id" in datos:
+        rol = db.get(Rol, datos["rol_id"])
+        if not rol:
+            raise HTTPException(status_code=404, detail=f"El rol con id={datos['rol_id']} no existe.")
+
+    if "sucursal_id" in datos:
+        sucursal = db.get(Sucursal, datos["sucursal_id"])
+        if not sucursal or not sucursal.activo:
+            raise HTTPException(status_code=404, detail=f"La sucursal con id={datos['sucursal_id']} no existe o está inactiva.")
+
+    for campo, valor in datos.items():
+        setattr(empleado, campo, valor)
+
+    db.add(empleado)
+    db.commit()
+    db.refresh(empleado)
+
+    log_auditoria(
+        nivel="INFO",
+        origen=f"PATCH /api/v1/empleados/{empleado_id}",
+        mensaje=f"Empleado actualizado: id={empleado_id} por empleado_id={info['empleado_id']}",
+        data=datos
+    )
+    return empleado
+
+
 @router.delete("/{empleado_id}/desactivar", response_model=EmpleadoDesactivarResponse)
 def desactivar_empleado(
     empleado_id: int,
     db: Session = Depends(get_session),
-    token: Optional[str] = Depends(oauth2_scheme)
+    token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
 ):
-    info = verificar_rol_empleado(token, ["ADMIN", "GERENTE"], db)
+    if not token_obj or not token_obj.credentials:
+        raise HTTPException(status_code=401, detail="Token Bearer ausente o inválido")
+
+    info = verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE"], db)
 
     # Restricción: no puede autodesactivarse
     if info["empleado_id"] == empleado_id:

@@ -5,6 +5,7 @@ from fastapi.openapi.utils import get_openapi
 
 from app.api.routers import productos_router, inventario_router, pedidos_router, reportes_router, mesa_router, auth_clientes_router, auth_empleados_router, empleados_router, sucursales_router, roles_router
 from app.api.routers import clientes_admin_router, promociones_router, ncf_router
+from app.api.routers import ingredientes_router
 
 from app.db.database import engine
 from app.core.middleware import AuditoriaMiddleware
@@ -58,6 +59,7 @@ app.include_router(sucursales_router.router, dependencies=[Depends(validate_gate
 app.include_router(clientes_admin_router.router, dependencies=[Depends(validate_gateway_token)])
 app.include_router(promociones_router.router, dependencies=[Depends(validate_gateway_token)])
 app.include_router(ncf_router.router, dependencies=[Depends(validate_gateway_token)])
+app.include_router(ingredientes_router.router, dependencies=[Depends(validate_gateway_token)])
 
 
 

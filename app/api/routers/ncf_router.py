@@ -1,7 +1,6 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, select, col
-from datetime import datetime, timezone
 
 from app.db.database import get_session
 from app.models.core_models import SecuenciaNcf, HistorialNcf
