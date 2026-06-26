@@ -65,8 +65,22 @@ if __name__ == "__main__":
 # docker exec -it sqlserver_core bash
 
 #[2]
-# /opt/mssql-tools18/bin/sqlcmd \
-# -S localhost \
-# -U sa \
-# -P 'Qa123456@' \
-# -C
+'''
+/opt/mssql-tools18/bin/sqlcmd \
+-S localhost \
+-U sa \
+-P 'Qa123456@' \
+-C
+'''
+
+
+# [3] 
+'''
+PARA RECREAR LA DB CADA VEZ QUE LA BORRE
+
+docker cp ./init/create-db.sql sqlserver_core:/tmp/create-db.sql
+
+Después, ya parado dentro de la bash del contenedor (o sin entrar siquiera, ver más abajo), ejecutás el script con sqlcmd, que viene incluido en la imagen oficial de SQL Server:
+
+/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'TuPasswordAqui' -i /tmp/create-db.sql -C
+'''
