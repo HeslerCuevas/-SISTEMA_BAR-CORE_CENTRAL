@@ -2,11 +2,17 @@ from sqlalchemy import func, Date
 from datetime import date
 from typing import List
 from fastapi import APIRouter, Depends
-from sqlmodel import Session, select, desc
+from sqlmodel import Session, select, desc, col
 
 from app.db.database import get_session
-from app.models.core_models import Producto, InventarioActual, PedidoGlobal, DetallePedido
-from app.schemas.reportes_schema import VentasDiaResponse, RankingProductosResponse, AlertaStockResponse
+from app.models.core_models import Producto, InventarioActual, PedidoGlobal, DetallePedido, Ingrediente
+from app.schemas.reportes_schema import (
+    VentasDiaResponse,
+    RankingProductosResponse,
+    AlertaStockResponse,
+    AlertaIngredienteResponse,
+)
+from decimal import Decimal
 
 router = APIRouter(
     prefix="/api/v1/reportes",
@@ -15,9 +21,8 @@ router = APIRouter(
 
 @router.get("/ventas-hoy", response_model=VentasDiaResponse)
 def get_ventas_hoy(session: Session = Depends(get_session)):
-    consulta = select(func.sum(PedidoGlobal.subtotal))
-
-    consulta = consulta.add_columns(
+    consulta = select(
+        func.sum(PedidoGlobal.subtotal),
         func.sum(PedidoGlobal.total_impuestos),
         func.sum(PedidoGlobal.propina_legal),
         func.sum(PedidoGlobal.total_general),
@@ -48,7 +53,6 @@ def get_ventas_hoy(session: Session = Depends(get_session)):
         conteo_pedidos=conteo or 0
     )
 
-
 @router.get("/top-productos-vendidos", response_model=List[RankingProductosResponse])
 def get_top_productos_vendidos(session: Session = Depends(get_session)):
     consulta = select(
@@ -66,6 +70,10 @@ def get_top_productos_vendidos(session: Session = Depends(get_session)):
 
 @router.get("/productos-stock-bajo", response_model=List[AlertaStockResponse])
 def get_productos_stock_bajo(session: Session = Depends(get_session)):
+    """
+    Legacy: products with tipo_control_inventario = PRODUCTO whose stock is at or
+    below their minimum in Inventario_Actual. Preserved for backward compatibility.
+    """
     consulta = select(
         Producto.nombre,
         InventarioActual.cantidad_disponible,
@@ -82,3 +90,30 @@ def get_productos_stock_bajo(session: Session = Depends(get_session)):
             stock_minimo=registro[2]
         ) for registro in resultado
     ]
+
+
+@router.get("/ingredientes-stock-bajo", response_model=List[AlertaIngredienteResponse])
+def get_ingredientes_stock_bajo(session: Session = Depends(get_session)):
+    """
+    Ingredient-based stock alerts: active ingredients at or below their minimum
+    quantity. This is the primary alert endpoint for the new inventory system.
+    """
+    ingredientes = session.exec(
+        select(Ingrediente).where(
+            col(Ingrediente.activo) == True,
+            col(Ingrediente.cantidad_actual) <= col(Ingrediente.cantidad_minima),
+        )
+    ).all()
+
+    return [
+        AlertaIngredienteResponse(
+            id=ing.id,
+            nombre=ing.nombre,
+            unidad_medida=ing.unidad_medida,
+            cantidad_actual=ing.cantidad_actual,
+            cantidad_minima=ing.cantidad_minima,
+            cantidad_reorden=ing.cantidad_reorden,
+            deficit=max(Decimal("0"), ing.cantidad_reorden - ing.cantidad_actual),
+        )
+        for ing in ingredientes
+    ]

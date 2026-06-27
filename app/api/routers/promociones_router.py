@@ -1,8 +1,11 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlmodel import Session, select, col
 from decimal import Decimal
-from datetime import datetime
+
+from app.services.promociones_service import _es_happy_hour, _promocion_vigente
+from datetime import datetime, timezone
 
 from app.db.database import get_session
 from app.models.core_models import Promocion, PromocionProducto, PromocionCategoria, Producto, Categoria
@@ -13,12 +16,10 @@ from app.services.audit_service import log_auditoria
 from app.services.promociones_service import (
     evaluar_promociones_para_item, obtener_mejor_promocion, evaluar_promociones_globales
 )
-from app.core.security import oauth2_scheme, verificar_rol_empleado
+from app.core.security import verificar_rol_empleado, security_bearer
 
 router = APIRouter(prefix="/api/v1/promociones", tags=["Promociones y Descuentos"])
 
-
-# ─── CRUD ───────────────────────────────────────────────────────────
 
 @router.get("/", response_model=List[PromocionResponse])
 def listar_promociones(
@@ -44,9 +45,9 @@ def obtener_promocion(promocion_id: int, db: Session = Depends(get_session)):
 def crear_promocion(
     payload: PromocionCreate,
     db: Session = Depends(get_session),
-    token: Optional[str] = Depends(oauth2_scheme)
+    token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
 ):
-    info = verificar_rol_empleado(token, ["ADMIN", "GERENTE"], db)
+    info = verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE"], db)
 
     existente = db.exec(select(Promocion).where(Promocion.nombre == payload.nombre)).first()
     if existente:
@@ -57,20 +58,18 @@ def crear_promocion(
     db.add(promo)
     db.flush()
 
-    # Asociar productos si aplica
     if payload.aplica_a == "PRODUCTOS" and payload.producto_ids:
         for pid in payload.producto_ids:
             producto = db.get(Producto, pid)
-            if not producto:
-                raise HTTPException(status_code=404, detail=f"Producto id={pid} no encontrado.")
+            if not producto or not producto.activo:
+                raise HTTPException(status_code=404, detail=f"Producto id={pid} no encontrado o inactivo.")
             db.add(PromocionProducto(promocion_id=promo.id, producto_id=pid))
 
-    # Asociar categorías si aplica
     if payload.aplica_a == "CATEGORIAS" and payload.categoria_ids:
         for cid in payload.categoria_ids:
             cat = db.get(Categoria, cid)
-            if not cat:
-                raise HTTPException(status_code=404, detail=f"Categoría id={cid} no encontrada.")
+            if not cat or not cat.activo:
+                raise HTTPException(status_code=404, detail=f"Categoría id={cid} no encontrada o inactiva.")
             db.add(PromocionCategoria(promocion_id=promo.id, categoria_id=cid))
 
     db.commit()
@@ -89,9 +88,9 @@ def actualizar_promocion(
     promocion_id: int,
     payload: PromocionUpdate,
     db: Session = Depends(get_session),
-    token: Optional[str] = Depends(oauth2_scheme)
+    token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
 ):
-    info = verificar_rol_empleado(token, ["ADMIN", "GERENTE"], db)
+    info = verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE"], db)
 
     promo = db.get(Promocion, promocion_id)
     if not promo:
@@ -112,7 +111,6 @@ def actualizar_promocion(
     for campo, valor in datos.items():
         setattr(promo, campo, valor)
 
-    # Actualizar asociaciones si se envían
     aplica_a = getattr(payload, 'aplica_a', None) or promo.aplica_a
 
     if payload.producto_ids is not None:
@@ -120,12 +118,18 @@ def actualizar_promocion(
         for pp in db.exec(select(PromocionProducto).where(PromocionProducto.promocion_id == promocion_id)).all():
             db.delete(pp)
         for pid in payload.producto_ids:
+            producto = db.get(Producto, pid)
+            if not producto or not producto.activo:
+                raise HTTPException(status_code=404, detail=f"Producto id={pid} no encontrado o inactivo.")
             db.add(PromocionProducto(promocion_id=promocion_id, producto_id=pid))
 
     if payload.categoria_ids is not None:
         for pc in db.exec(select(PromocionCategoria).where(PromocionCategoria.promocion_id == promocion_id)).all():
             db.delete(pc)
         for cid in payload.categoria_ids:
+            cat = db.get(Categoria, cid)
+            if not cat or not cat.activo:
+                raise HTTPException(status_code=404, detail=f"Categoría id={cid} no encontrada o inactiva.")
             db.add(PromocionCategoria(promocion_id=promocion_id, categoria_id=cid))
 
     db.add(promo)
@@ -144,9 +148,9 @@ def actualizar_promocion(
 def desactivar_promocion(
     promocion_id: int,
     db: Session = Depends(get_session),
-    token: Optional[str] = Depends(oauth2_scheme)
+    token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
 ):
-    info = verificar_rol_empleado(token, ["ADMIN", "GERENTE"], db)
+    info = verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE"], db)
 
     promo = db.get(Promocion, promocion_id)
     if not promo:
@@ -166,8 +170,6 @@ def desactivar_promocion(
     return {"mensaje": f"Promoción '{promo.nombre}' desactivada.", "id": promocion_id}
 
 
-# ─── Endpoints de Evaluación ──────────────────────────────────────────────
-
 @router.get("/evaluar/item", response_model=List[PromocionAplicadaResponse])
 def evaluar_promociones_item(
     producto_id: int = Query(...),
@@ -175,10 +177,6 @@ def evaluar_promociones_item(
     subtotal: float = Query(..., gt=0),
     db: Session = Depends(get_session)
 ):
-    """
-    Evaluar qué promociones aplican a un producto específico en este momento.
-    Incluye validación de Happy Hour.
-    """
     return evaluar_promociones_para_item(
         session=db,
         producto_id=producto_id,
@@ -194,7 +192,6 @@ def evaluar_mejor_descuento(
     subtotal: float = Query(..., gt=0),
     db: Session = Depends(get_session)
 ):
-    """Retorna únicamente la mejor promoción (mayor descuento) para un ítem."""
     return obtener_mejor_promocion(
         session=db,
         producto_id=producto_id,
@@ -208,7 +205,6 @@ def evaluar_descuentos_globales(
     subtotal_total: float = Query(..., gt=0, description="Total del pedido sobre el cual se aplican descuentos globales"),
     db: Session = Depends(get_session)
 ):
-    """Evaluar descuentos globales (aplica_a=TODOS) sobre el total del pedido."""
     return evaluar_promociones_globales(
         session=db,
         subtotal_total=Decimal(str(subtotal_total))
@@ -217,9 +213,6 @@ def evaluar_descuentos_globales(
 
 @router.get("/happy-hour/activo", response_model=dict)
 def verificar_happy_hour_activo(db: Session = Depends(get_session)):
-    """Verifica si hay alguna promoción de Happy Hour activa en este momento."""
-    from app.services.promociones_service import _es_happy_hour, _promocion_vigente
-    from datetime import datetime, timezone
 
     ahora = datetime.now(timezone.utc).replace(tzinfo=None)
     stmt = select(Promocion).where(

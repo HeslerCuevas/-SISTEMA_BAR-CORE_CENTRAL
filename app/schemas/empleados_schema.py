@@ -37,6 +37,33 @@ class EmpleadoCreate(BaseModel):
         return v.strip()
 
 
+class EmpleadoUpdate(BaseModel):
+    nombre_completo: Optional[str] = None
+    documento_identidad: Optional[str] = None
+    email: Optional[str] = None
+    rol_id: Optional[int] = None
+    sucursal_id: Optional[int] = None
+    activo: Optional[bool] = None
+
+    @field_validator('email')
+    @classmethod
+    def email_valido(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None:
+            if '@' not in v:
+                raise ValueError('Email inválido.')
+            return v.lower().strip()
+        return v
+
+    @field_validator('nombre_completo')
+    @classmethod
+    def nombre_no_vacio(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None:
+            if not v or not v.strip():
+                raise ValueError('El nombre completo no puede estar vacío.')
+            return v.strip()
+        return v
+
+
 class EmpleadoAdminResponse(BaseModel):
     id: int
     rol_id: int

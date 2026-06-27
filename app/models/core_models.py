@@ -77,7 +77,11 @@ class Producto(SQLModel, table=True):
     descripcion: Optional[str] = Field(default=None, sa_column=Column("Descripcion", String(1000)))
     precio_base: Decimal = Field(sa_column=Column("PrecioBase", Numeric(12, 2), nullable=False))
     costo_promedio: Decimal = Field(default=0.0, sa_column=Column("CostoPromedio", Numeric(12, 2)))
-    es_inventariable: bool = Field(default=True, sa_column=Column("EsInventariable", Boolean, server_default=text("1")))
+    # PRODUCTO = legacy unit-level stock | INGREDIENTES = recipe-based | NINGUNO = no stock tracking
+    tipo_control_inventario: str = Field(
+        default="PRODUCTO",
+        sa_column=Column("TipoControlInventario", String(20), nullable=False, server_default=text("'PRODUCTO'"))
+    )
     activo: bool = Field(sa_column=Column("Activo", Boolean, server_default=text("1")))
     ultima_modificacion: datetime = Field(
         sa_column=Column("Ultima_Modificacion", DateTime, server_default=text("GETDATE()")))
@@ -262,21 +266,18 @@ class ModificadorItem(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, sa_column=Column("Id", Integer, primary_key=True))
 
-    detalle_pedido_id: int = Field(
+    # Mapeado 1:1 con la columna 'DetallePedidoUuid' de tipo uniqueidentifier que sale en tu consulta
+    detalle_pedido_uuid: uuid.UUID = Field(
         sa_column=Column(
-            "DetallePedidoId",
-            Integer,
-            ForeignKey("Detalles_Pedido.Id"),
-            nullable=False,
-            index=True
+            "DetallePedidoUuid",
+            UNIQUEIDENTIFIER,
+            nullable=False
         )
     )
     descripcion: str = Field(sa_column=Column("Descripcion", String(255), nullable=False))
     fecha_registro: datetime = Field(
-        sa_column=Column("FechaRegistro", DateTime, server_default=text("GETDATE()"))
+        sa_column=Column("FechaRegistro", DateTime, server_default=text("GETDATE()"), nullable=True)
     )
-
-
 class DivisionCuenta(SQLModel, table=True):
     __tablename__ = "Division_Cuenta"
     id: Optional[int] = Field(default=None, sa_column=Column("Id", Integer, primary_key=True))
@@ -289,3 +290,135 @@ class DivisionCuenta(SQLModel, table=True):
     )
     empleado_id: Optional[int] = Field(default=None, sa_column=Column("EmpleadoId", Integer, ForeignKey("Empleados.Id")))
     fecha_division: datetime = Field(sa_column=Column("FechaDivision", DateTime, server_default=text("GETDATE()")))
+
+
+# ─────────────────────────────────────────────────────────────────
+# SISTEMA DE INVENTARIO POR INGREDIENTES
+# ─────────────────────────────────────────────────────────────────
+
+class CategoriaIngrediente(SQLModel, table=True):
+    """Master data: ingredient categories (e.g., Spirits, Mixers, Garnishes)."""
+    __tablename__ = "Categorias_Ingredientes"
+    id: Optional[int] = Field(default=None, sa_column=Column("Id", Integer, primary_key=True))
+    nombre: str = Field(sa_column=Column("Nombre", String(100), unique=True, nullable=False))
+    descripcion: Optional[str] = Field(default=None, sa_column=Column("Descripcion", String(500)))
+    activo: bool = Field(default=True, sa_column=Column("Activo", Boolean, nullable=False, server_default=text("1")))
+    ultima_modificacion: datetime = Field(
+        sa_column=Column("Ultima_Modificacion", DateTime, nullable=False, server_default=text("GETDATE()"))
+    )
+
+
+class Ingrediente(SQLModel, table=True):
+    """
+    Ingredient master with real-time stock tracking.
+    UnidadMedida allowed values: ml | l | g | kg | unidad | pieza | botella | lata
+    """
+    __tablename__ = "Ingredientes"
+    id: Optional[int] = Field(default=None, sa_column=Column("Id", Integer, primary_key=True))
+    categoria_id: int = Field(
+        sa_column=Column("CategoriaId", Integer, ForeignKey("Categorias_Ingredientes.Id"), nullable=False)
+    )
+    nombre: str = Field(sa_column=Column("Nombre", String(150), nullable=False))
+    descripcion: Optional[str] = Field(default=None, sa_column=Column("Descripcion", String(500)))
+    # Canonical storage unit for this ingredient
+    unidad_medida: str = Field(sa_column=Column("UnidadMedida", String(20), nullable=False))
+    cantidad_actual: Decimal = Field(
+        default=Decimal("0"),
+        sa_column=Column("CantidadActual", Numeric(12, 4), nullable=False, server_default=text("0"))
+    )
+    cantidad_minima: Decimal = Field(
+        default=Decimal("0"),
+        sa_column=Column("CantidadMinima", Numeric(12, 4), nullable=False, server_default=text("0"))
+    )
+    cantidad_reorden: Decimal = Field(
+        default=Decimal("0"),
+        sa_column=Column("CantidadReorden", Numeric(12, 4), nullable=False, server_default=text("0"))
+    )
+    costo_unitario: Decimal = Field(
+        default=Decimal("0"),
+        sa_column=Column("CostoUnitario", Numeric(12, 4), nullable=False, server_default=text("0"))
+    )
+    activo: bool = Field(default=True, sa_column=Column("Activo", Boolean, nullable=False, server_default=text("1")))
+    ultima_modificacion: datetime = Field(
+        sa_column=Column("Ultima_Modificacion", DateTime, nullable=False, server_default=text("GETDATE()"))
+    )
+
+
+class RecetaProducto(SQLModel, table=True):
+    """
+    BOM Header: one recipe per product.
+    A product must have tipo_control_inventario = 'INGREDIENTES' to use this.
+    """
+    __tablename__ = "Recetas_Producto"
+    id: Optional[int] = Field(default=None, sa_column=Column("Id", Integer, primary_key=True))
+    producto_id: int = Field(
+        sa_column=Column("ProductoId", Integer, ForeignKey("Productos.Id"), unique=True, nullable=False)
+    )
+    descripcion: Optional[str] = Field(default=None, sa_column=Column("Descripcion", String(500)))
+    activo: bool = Field(default=True, sa_column=Column("Activo", Boolean, nullable=False, server_default=text("1")))
+    ultima_modificacion: datetime = Field(
+        sa_column=Column("Ultima_Modificacion", DateTime, nullable=False, server_default=text("GETDATE()"))
+    )
+
+
+class ComponenteReceta(SQLModel, table=True):
+    """
+    BOM Line: each ingredient required and the amount needed to produce ONE unit of the product.
+    UnidadMedida may differ from the ingredient's canonical unit — conversion is applied at runtime.
+    """
+    __tablename__ = "Componentes_Receta"
+    id: Optional[int] = Field(default=None, sa_column=Column("Id", Integer, primary_key=True))
+    receta_id: int = Field(
+        sa_column=Column("RecetaId", Integer, ForeignKey("Recetas_Producto.Id"), nullable=False)
+    )
+    ingrediente_id: int = Field(
+        sa_column=Column("IngredienteId", Integer, ForeignKey("Ingredientes.Id"), nullable=False)
+    )
+    # Quantity of this ingredient required to make ONE unit of the product
+    cantidad_requerida: Decimal = Field(
+        sa_column=Column("CantidadRequerida", Numeric(12, 4), nullable=False)
+    )
+    # Unit in which the recipe specifies the quantity (may differ from ingredient's storage unit)
+    unidad_medida: str = Field(sa_column=Column("UnidadMedida", String(20), nullable=False))
+
+
+class MovimientoIngrediente(SQLModel, table=True):
+    """
+    Full audit ledger for every ingredient stock change.
+    Replaces (for ingredient-based products) the legacy Movimientos_Inventario table.
+
+    TipoMovimiento values:
+        COMPRA          - Stock purchased/received
+        AJUSTE_MANUAL   - Manual stock adjustment (delta)
+        CONSUMO_VENTA   - Auto-deducted when an order is created
+        DESPERDICIO     - Waste/spoilage write-off
+        CORRECCION      - Physical count correction (sets absolute value)
+        CARGA_INICIAL   - Initial stock load
+        DEVOLUCION      - Reversal on order cancellation
+    """
+    __tablename__ = "Movimientos_Ingrediente"
+    id: Optional[int] = Field(default=None, sa_column=Column("Id", Integer, primary_key=True))
+    ingrediente_id: int = Field(
+        sa_column=Column("IngredienteId", Integer, ForeignKey("Ingredientes.Id"), nullable=False)
+    )
+    empleado_id: Optional[int] = Field(
+        default=None, sa_column=Column("EmpleadoId", Integer, ForeignKey("Empleados.Id"))
+    )
+    tipo_movimiento: str = Field(sa_column=Column("TipoMovimiento", String(30), nullable=False))
+    # Delta quantity (absolute value for CORRECCION)
+    cantidad: Decimal = Field(sa_column=Column("Cantidad", Numeric(12, 4), nullable=False))
+    cantidad_anterior: Decimal = Field(sa_column=Column("CantidadAnterior", Numeric(12, 4), nullable=False))
+    cantidad_nueva: Decimal = Field(sa_column=Column("CantidadNueva", Numeric(12, 4), nullable=False))
+    documento_referencia: Optional[str] = Field(
+        default=None, sa_column=Column("DocumentoReferencia", String(100))
+    )
+    pedido_id: Optional[int] = Field(
+        default=None, sa_column=Column("PedidoId", Integer, ForeignKey("Pedidos_Global.Id"))
+    )
+    notas: Optional[str] = Field(default=None, sa_column=Column("Notas", String(500)))
+    fecha_movimiento: datetime = Field(
+        sa_column=Column("FechaMovimiento", DateTime, nullable=False, server_default=text("GETDATE()"))
+    )
+    movimiento_local_uuid: Optional[str] = Field(
+        default=None, sa_column=Column("Movimiento_Local_UUID", String(36))
+    )

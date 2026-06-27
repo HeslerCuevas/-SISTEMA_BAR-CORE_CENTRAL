@@ -1,12 +1,13 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlmodel import Session, select
 
 from app.db.database import get_session
 from app.models.core_models import Rol
 from app.schemas.roles_schema import RolCreate, RolUpdate, RolResponse
 from app.services.audit_service import log_auditoria
-from app.core.security import oauth2_scheme, verificar_rol_empleado
+from app.core.security import oauth2_scheme, verificar_rol_empleado, security_bearer
 
 router = APIRouter(prefix="/api/v1/roles", tags=["Catálogos"])
 
@@ -29,9 +30,9 @@ def obtener_rol(rol_id: int, db: Session = Depends(get_session)):
 def crear_rol(
     payload: RolCreate,
     db: Session = Depends(get_session),
-    token: Optional[str] = Depends(oauth2_scheme)
+    token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
 ):
-    verificar_rol_empleado(token, ["ADMIN"], db)
+    verificar_rol_empleado(token_obj.credentials, ["ADMIN"], db)
 
     existente = db.exec(select(Rol).where(Rol.nombre == payload.nombre)).first()
     if existente:
@@ -55,9 +56,9 @@ def actualizar_rol(
     rol_id: int,
     payload: RolUpdate,
     db: Session = Depends(get_session),
-    token: Optional[str] = Depends(oauth2_scheme)
+    token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
 ):
-    verificar_rol_empleado(token, ["ADMIN"], db)
+    verificar_rol_empleado(token_obj.credentials, ["ADMIN"], db)
 
     rol = db.get(Rol, rol_id)
     if not rol:

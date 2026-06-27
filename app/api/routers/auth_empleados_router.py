@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.security import OAuth2PasswordRequestForm, HTTPAuthorizationCredentials
 from sqlmodel import Session, select
 from sqlalchemy import or_
 from typing import Optional
@@ -19,7 +19,7 @@ from app.schemas.auth_schema import (
 from app.models.core_models import Empleado, Rol, PasswordResetToken
 from app.core.security import (
     verify_password, create_access_token, get_password_hash,
-    oauth2_scheme, verificar_rol_empleado, decode_access_token
+    oauth2_scheme, verificar_rol_empleado, decode_access_token, security_bearer
 )
 from app.services.audit_service import log_auditoria
 from app.services.email_service import enviar_email_reset_password
@@ -73,13 +73,13 @@ def login(
 def cambiar_password_empleado(
     payload: CambioPasswordEmpleadoRequest,
     session: Session = Depends(get_session),
-    token: Optional[str] = Depends(oauth2_scheme)
+    token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
 ):
     """El empleado cambia su propia contraseña validando la actual."""
-    if not token:
+    if not token_obj:
         raise HTTPException(status_code=401, detail="Se requiere autenticación.")
 
-    t = decode_access_token(token)
+    t = decode_access_token(token_obj.credentials)
     if not t:
         raise HTTPException(status_code=401, detail="Token inválido o expirado.")
 
@@ -109,10 +109,10 @@ def cambiar_password_admin(
     empleado_id: int,
     payload: CambioPasswordAdminRequest,
     session: Session = Depends(get_session),
-    token: Optional[str] = Depends(oauth2_scheme)
+    token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
 ):
     """Un ADMIN cambia la contraseña de cualquier empleado sin requerir la actual."""
-    info = verificar_rol_empleado(token, ["ADMIN"], session)
+    info = verificar_rol_empleado(token_obj.credentials if token_obj else None, ["ADMIN"], session)
 
     empleado = session.get(Empleado, empleado_id)
     if not empleado:
@@ -145,7 +145,7 @@ def solicitar_reset_password_empleado(
 
     # Respuesta genérica para no revelar si el email existe
     respuesta_generica = PasswordResetResponse(
-        mensaje="Si el email está registrado, recibirás un enlace de recuperación en breve."
+        mensaje="If the email is registered, you will receive a recovery link shortly."
     )
 
     if not empleado or not empleado.activo:

@@ -27,7 +27,7 @@ def seed_bar_data():
         db_rol = session.exec(statement_rol).first()
 
         if not db_rol:
-            db_rol = Rol(nombre="Administrador")
+            db_rol = Rol(nombre="ADMIN")
             session.add(db_rol)
             session.commit()
             session.refresh(db_rol)

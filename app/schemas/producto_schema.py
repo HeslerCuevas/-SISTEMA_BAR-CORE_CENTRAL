@@ -1,18 +1,25 @@
-from pydantic import BaseModel, field_validator
-from typing import Optional
+from pydantic import BaseModel, Field, field_validator, model_validator
+from typing import Optional, Literal
 from decimal import Decimal
 from datetime import datetime
 
 
+TipoControlInventarioType = Literal["PRODUCTO", "INGREDIENTES", "NINGUNO"]
+
+
 class ProductoCreate(BaseModel):
+    model_config = {"populate_by_name": True}
+
     categoria_id: int
     impuesto_id: int
     sku: str
     nombre: str
-    descripcion: Optional[str] = None
+    # Acepta tanto 'descripcion' (español) como 'description' (inglés)
+    descripcion: Optional[str] = Field(default=None, alias="description", validation_alias="descripcion")
     precio_base: Decimal
     costo_promedio: Decimal
-    es_inventariable: bool = True
+    # PRODUCTO = legacy per-unit stock | INGREDIENTES = recipe-based | NINGUNO = no tracking
+    tipo_control_inventario: TipoControlInventarioType = "PRODUCTO"
     activo: bool = True
     imagen_url: Optional[str] = None
 
@@ -31,6 +38,8 @@ class ProductoCreate(BaseModel):
         return v
 
 
+
+
 class ProductoUpdate(BaseModel):
     """PATCH parcial: todos los campos son opcionales."""
     categoria_id: Optional[int] = None
@@ -39,7 +48,7 @@ class ProductoUpdate(BaseModel):
     descripcion: Optional[str] = None
     precio_base: Optional[Decimal] = None
     costo_promedio: Optional[Decimal] = None
-    es_inventariable: Optional[bool] = None
+    tipo_control_inventario: Optional[TipoControlInventarioType] = None
     activo: Optional[bool] = None
     imagen_url: Optional[str] = None
 
@@ -58,16 +67,21 @@ class ProductoUpdate(BaseModel):
         return v
 
 
+
+
 class ProductoResponse(ProductoCreate):
+    model_config = {"populate_by_name": True, "from_attributes": True}
+
     id: int
     tasa_impuesto: Decimal
-    cantidad_disponible: int
+    cantidad_disponible: Optional[int] = None
+    # Re-declaramos sin alias para que el JSON de respuesta siempre use 'descripcion'
+    descripcion: Optional[str] = None
+    tipo_control_inventario: str
     ultima_modificacion: datetime
     imagen_url: Optional[str] = None
     id_categoria: Optional[int] = None
 
-    class Config:
-        from_attributes = True
 
 
 class CategoriaCreate(BaseModel):
@@ -150,3 +164,4 @@ class ImpuestoResponse(BaseModel):
 
     class Config:
         from_attributes = True
+

@@ -1,5 +1,6 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlmodel import Session, select, col
 from datetime import datetime
 
@@ -7,7 +8,7 @@ from app.db.database import get_session
 from app.models.core_models import Sucursal
 from app.schemas.sucursales_schema import SucursalCreate, SucursalUpdate, SucursalResponse
 from app.services.audit_service import log_auditoria
-from app.core.security import oauth2_scheme, verificar_rol_empleado
+from app.core.security import oauth2_scheme, verificar_rol_empleado, security_bearer
 
 router = APIRouter(prefix="/api/v1/sucursales", tags=["Catálogos"])
 
@@ -39,9 +40,9 @@ def obtener_sucursal(
 def crear_sucursal(
     payload: SucursalCreate,
     db: Session = Depends(get_session),
-    token: Optional[str] = Depends(oauth2_scheme)
+    token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
 ):
-    verificar_rol_empleado(token, ["ADMIN", "GERENTE"], db)
+    verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE"], db)
 
     existente = db.exec(select(Sucursal).where(Sucursal.nombre == payload.nombre)).first()
     if existente:
@@ -65,9 +66,9 @@ def actualizar_sucursal(
     sucursal_id: int,
     payload: SucursalUpdate,
     db: Session = Depends(get_session),
-    token: Optional[str] = Depends(oauth2_scheme)
+    token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
 ):
-    verificar_rol_empleado(token, ["ADMIN", "GERENTE"], db)
+    verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE"], db)
 
     sucursal = db.get(Sucursal, sucursal_id)
     if not sucursal:
@@ -106,9 +107,9 @@ def actualizar_sucursal(
 def desactivar_sucursal(
     sucursal_id: int,
     db: Session = Depends(get_session),
-    token: Optional[str] = Depends(oauth2_scheme)
+    token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
 ):
-    verificar_rol_empleado(token, ["ADMIN"], db)
+    verificar_rol_empleado(token_obj.credentials, ["ADMIN"], db)
 
     sucursal = db.get(Sucursal, sucursal_id)
     if not sucursal:

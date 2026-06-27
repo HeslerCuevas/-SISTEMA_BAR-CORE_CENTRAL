@@ -141,7 +141,7 @@ def solicitar_reset_cliente(
     cliente = session.exec(select(Cliente).where(Cliente.email == payload.email)).first()
 
     respuesta_generica = PasswordResetResponse(
-        mensaje="Si el email está registrado, recibirás un enlace de recuperación en breve."
+        mensaje="If the email is registered, you will receive a recovery link shortly."
     )
 
     if not cliente or not cliente.activo:

@@ -91,3 +91,36 @@ class ResumenCuentaResponse(BaseModel):
     total_general_acumulado: float
     items_consumidos: List[ItemResumen]
     propina_extra_acumulada: float
+
+class FacturarPedidoRequest(BaseModel):
+    empleado_id: int
+
+
+class ModificadorItemRequest(BaseModel):
+    """Instrucciones especiales para un ítem (ej: 'sin hielo', 'doble shot')."""
+    descripcion: str
+
+
+class ModificadorItemResponse(BaseModel):
+    id: int
+    detalle_pedido_uuid: uuid.UUID  # <-- REVISA QUE ESTÉ ASÍ Y NO COMO detalle_pedido_id
+    descripcion: str
+    fecha_registro: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+class SplitBillRequest(BaseModel):
+    numero_partes: int
+    montos_personalizados: Optional[List[float]] = None
+    empleado_id: Optional[int] = None
+
+
+class SplitBillResponse(BaseModel):
+    pedido_id: int
+    factura_local_uuid: Optional[str]
+    total_general: Decimal
+    numero_partes: int
+    monto_por_parte: Decimal
+    partes: List[dict]
+    division_id: int
