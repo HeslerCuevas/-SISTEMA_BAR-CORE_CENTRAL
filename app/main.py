@@ -1,16 +1,15 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends
 from sqlmodel import SQLModel
-from fastapi.openapi.utils import get_openapi
 
 from app.api.routers import productos_router, inventario_router, pedidos_router, reportes_router, mesa_router, auth_clientes_router, auth_empleados_router, empleados_router, sucursales_router, roles_router
-from app.api.routers import clientes_admin_router, promociones_router, ncf_router
+from app.api.routers import clientes_admin_router, promociones_router
 from app.api.routers import ingredientes_router
 
 from app.db.database import engine
 from app.core.middleware import AuditoriaMiddleware
 from app.services.audit_service import log_auditoria
-from app.core.security import validate_gateway_token, security_bearer
+from app.core.security import validate_gateway_token
 from fastapi.security import APIKeyHeader
 
 
@@ -45,7 +44,6 @@ app = FastAPI(
 
 app.add_middleware(AuditoriaMiddleware)
 
-# ─── Routers existentes ──────────────────────────────────────────────────────
 app.include_router(productos_router.router, dependencies=[Depends(validate_gateway_token)])
 app.include_router(inventario_router.router, dependencies=[Depends(validate_gateway_token)])
 app.include_router(pedidos_router.router, dependencies=[Depends(validate_gateway_token)])
@@ -58,7 +56,6 @@ app.include_router(roles_router.router, dependencies=[Depends(validate_gateway_t
 app.include_router(sucursales_router.router, dependencies=[Depends(validate_gateway_token)])
 app.include_router(clientes_admin_router.router, dependencies=[Depends(validate_gateway_token)])
 app.include_router(promociones_router.router, dependencies=[Depends(validate_gateway_token)])
-app.include_router(ncf_router.router, dependencies=[Depends(validate_gateway_token)])
 app.include_router(ingredientes_router.router, dependencies=[Depends(validate_gateway_token)])
 
 

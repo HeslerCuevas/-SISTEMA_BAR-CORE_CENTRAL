@@ -1,25 +1,3 @@
-"""
-Ingredientes Router — full CRUD for the ingredient-based inventory system.
-
-Base prefix: /api/v1/ingredientes
-
-Route groups (in registration order — static before parameterized):
-    /categorias/...         — ingredient categories
-    /disponibilidad/...     — calculated product availability
-    /alertas-stock          — ingredients below minimum
-    /movimiento             — manual stock movement
-    /recetas/...            — product BOM
-    /                       — ingredient list / create
-    /{id}/movimientos       — movement history for one ingredient
-    /{id}                   — single ingredient CRUD
-
-Roles summary:
-    ADMIN      — full access
-    GERENTE    — all except hard-delete paths
-    INVENTARIO — stock movements + read access
-    CAJERO     — read-only availability (any authenticated employee via empty list)
-"""
-
 from datetime import datetime
 from decimal import Decimal
 from typing import List, Optional
@@ -40,7 +18,6 @@ from app.models.core_models import (
     RecetaProducto,
 )
 from app.schemas.ingredientes_schema import (
-    AlertaIngredienteResponse,
     CategoriaIngredienteCreate,
     CategoriaIngredienteResponse,
     CategoriaIngredienteUpdate,
@@ -62,17 +39,13 @@ router = APIRouter(
 )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# CATEGORÍAS DE INGREDIENTES
-# ─────────────────────────────────────────────────────────────────────────────
-
 @router.get("/categorias", response_model=List[CategoriaIngredienteResponse])
 def listar_categorias_ingredientes(
     incluir_inactivas: bool = Query(False),
     session: Session = Depends(get_session),
     token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer),
 ):
-    verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE", "INVENTARIO"], session)
+    verificar_rol_empleado(token_obj.credentials if token_obj else None, ["ADMIN", "GERENTE", "INVENTARIO"], session)
     stmt = select(CategoriaIngrediente)
     if not incluir_inactivas:
         stmt = stmt.where(col(CategoriaIngrediente.activo) == True)
@@ -85,7 +58,7 @@ def obtener_categoria_ingrediente(
     session: Session = Depends(get_session),
     token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer),
 ):
-    verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE", "INVENTARIO"], session)
+    verificar_rol_empleado(token_obj.credentials if token_obj else None, ["ADMIN", "GERENTE", "INVENTARIO"], session)
     cat = session.get(CategoriaIngrediente, categoria_id)
     if not cat:
         raise HTTPException(status_code=404, detail="Categoría de ingrediente no encontrada.")
@@ -98,7 +71,7 @@ def crear_categoria_ingrediente(
     session: Session = Depends(get_session),
     token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer),
 ):
-    verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE"], session)
+    verificar_rol_empleado(token_obj.credentials if token_obj else None, ["ADMIN", "GERENTE"], session)
 
     existente = session.exec(
         select(CategoriaIngrediente).where(CategoriaIngrediente.nombre == payload.nombre)
@@ -134,7 +107,7 @@ def actualizar_categoria_ingrediente(
     session: Session = Depends(get_session),
     token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer),
 ):
-    verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE"], session)
+    verificar_rol_empleado(token_obj.credentials if token_obj else None, ["ADMIN", "GERENTE"], session)
 
     cat = session.get(CategoriaIngrediente, categoria_id)
     if not cat:
@@ -178,7 +151,7 @@ def desactivar_categoria_ingrediente(
     session: Session = Depends(get_session),
     token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer),
 ):
-    verificar_rol_empleado(token_obj.credentials, ["ADMIN"], session)
+    verificar_rol_empleado(token_obj.credentials if token_obj else None, ["ADMIN"], session)
 
     cat = session.get(CategoriaIngrediente, categoria_id)
     if not cat:
@@ -186,7 +159,6 @@ def desactivar_categoria_ingrediente(
     if not cat.activo:
         raise HTTPException(status_code=400, detail="La categoría ya está inactiva.")
 
-    # Verify no active ingredients use this category
     ingrediente_activo = session.exec(
         select(Ingrediente).where(
             col(Ingrediente.categoria_id) == categoria_id,
@@ -229,7 +201,7 @@ def listar_disponibilidad_productos(
     PRODUCTO products: shows legacy InventarioActual stock.
     NINGUNO products: null (not tracked).
     """
-    verificar_rol_empleado(token_obj.credentials, [], session)
+    verificar_rol_empleado(token_obj.credentials if token_obj else None, [], session)
 
     stmt = select(Producto)
     if solo_activos:
@@ -281,7 +253,7 @@ def obtener_disponibilidad_producto(
     """
     Calculate and return the producible quantity for a single INGREDIENTES product.
     """
-    verificar_rol_empleado(token_obj.credentials, [], session)
+    verificar_rol_empleado(token_obj.credentials if token_obj else None, [], session)
 
     producto = session.get(Producto, producto_id)
     if not producto:
@@ -330,11 +302,11 @@ def registrar_movimiento_ingrediente(
     For all others: *cantidad* is the positive quantity delta.
     """
     empleado_info = verificar_rol_empleado(
-        token_obj.credentials, ["ADMIN", "GERENTE", "INVENTARIO"], session
+        token_obj.credentials if token_obj else None, ["ADMIN", "GERENTE", "INVENTARIO"], session
     )
 
     try:
-        ingrediente = IngredientInventoryManager.registrar_movimiento_ingrediente(
+        ingrediente, movimiento = IngredientInventoryManager.registrar_movimiento_ingrediente(
             session=session,
             ingrediente_id=mov_in.ingrediente_id,
             tipo=mov_in.tipo_movimiento,
@@ -345,13 +317,7 @@ def registrar_movimiento_ingrediente(
             movimiento_local_uuid=mov_in.movimiento_local_uuid,
         )
         session.commit()
-
-        # Retrieve the movement just created to return it
-        movimiento = session.exec(
-            select(MovimientoIngrediente)
-            .where(col(MovimientoIngrediente.ingrediente_id) == mov_in.ingrediente_id)
-            .order_by(col(MovimientoIngrediente.id).desc())
-        ).first()
+        session.refresh(movimiento)
 
         log_auditoria(
             nivel="INFO",
@@ -390,7 +356,7 @@ def crear_o_reemplazar_receta(
 
     The product's tipo_control_inventario is automatically set to INGREDIENTES.
     """
-    verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE"], session)
+    verificar_rol_empleado(token_obj.credentials if token_obj else None, ["ADMIN", "GERENTE"], session)
 
     # Validate product exists
     producto = session.get(Producto, payload.producto_id)
@@ -517,7 +483,7 @@ def obtener_receta_producto(
     session: Session = Depends(get_session),
     token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer),
 ):
-    verificar_rol_empleado(token_obj.credentials, [], session)
+    verificar_rol_empleado(token_obj.credentials if token_obj else None, [], session)
 
     receta = session.exec(
         select(RecetaProducto).where(RecetaProducto.producto_id == producto_id)
@@ -567,7 +533,7 @@ def eliminar_receta_producto(
     Soft-delete a product's recipe by deactivating it.
     Optionally reverts the product's tipo_control_inventario to PRODUCTO.
     """
-    verificar_rol_empleado(token_obj.credentials, ["ADMIN"], session)
+    verificar_rol_empleado(token_obj.credentials if token_obj else None, ["ADMIN"], session)
 
     receta = session.exec(
         select(RecetaProducto).where(RecetaProducto.producto_id == producto_id)
@@ -613,7 +579,7 @@ def listar_ingredientes(
     session: Session = Depends(get_session),
     token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer),
 ):
-    verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE", "INVENTARIO"], session)
+    verificar_rol_empleado(token_obj.credentials if token_obj else None, ["ADMIN", "GERENTE", "INVENTARIO"], session)
 
     stmt = select(Ingrediente)
     if solo_activos:
@@ -631,7 +597,7 @@ def crear_ingrediente(
     session: Session = Depends(get_session),
     token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer),
 ):
-    verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE"], session)
+    verificar_rol_empleado(token_obj.credentials if token_obj else None, ["ADMIN", "GERENTE"], session)
 
     # Validate category exists and is active
     cat = session.get(CategoriaIngrediente, payload.categoria_id)
@@ -687,19 +653,20 @@ def crear_ingrediente(
         raise HTTPException(status_code=400, detail=f"Error al crear ingrediente: {str(e)}")
 
 
-@router.put("/{ingrediente_id}", response_model=IngredienteResponse)
+@router.patch("/{ingrediente_id}", response_model=IngredienteResponse)
 def actualizar_ingrediente(
     ingrediente_id: int,
     payload: IngredienteUpdate,
     session: Session = Depends(get_session),
     token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer),
 ):
-    verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE"], session)
+    verificar_rol_empleado(token_obj.credentials if token_obj else None, ["ADMIN", "GERENTE"], session)
 
     ing = session.get(Ingrediente, ingrediente_id)
     if not ing:
         raise HTTPException(status_code=404, detail="Ingrediente no encontrado.")
 
+    # exclude_unset=True makes this a true partial update (PATCH)
     datos = payload.model_dump(exclude_unset=True)
 
     if "categoria_id" in datos:
@@ -737,23 +704,11 @@ def actualizar_ingrediente(
 
     log_auditoria(
         nivel="INFO",
-        origen=f"PUT /api/v1/ingredientes/{ingrediente_id}",
+        origen=f"PATCH /api/v1/ingredientes/{ingrediente_id}",
         mensaje=f"Ingrediente actualizado: id={ingrediente_id}",
         data=datos,
     )
     return IngredienteResponse.from_orm_with_alert(ing)
-
-
-@router.patch("/{ingrediente_id}", response_model=IngredienteResponse)
-def actualizar_ingrediente_parcial(
-    ingrediente_id: int,
-    payload: IngredienteUpdate,
-    session: Session = Depends(get_session),
-    token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer),
-):
-    """PATCH — same logic as PUT but semantically partial."""
-    return actualizar_ingrediente(ingrediente_id, payload, session, token_obj)
-
 
 @router.delete("/{ingrediente_id}", response_model=dict)
 def desactivar_ingrediente(
@@ -761,7 +716,7 @@ def desactivar_ingrediente(
     session: Session = Depends(get_session),
     token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer),
 ):
-    verificar_rol_empleado(token_obj.credentials, ["ADMIN"], session)
+    verificar_rol_empleado(token_obj.credentials if token_obj else None, ["ADMIN"], session)
 
     ing = session.get(Ingrediente, ingrediente_id)
     if not ing:
@@ -803,7 +758,7 @@ def obtener_ingrediente(
     session: Session = Depends(get_session),
     token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer),
 ):
-    verificar_rol_empleado(token_obj.credentials, [], session)
+    verificar_rol_empleado(token_obj.credentials if token_obj else None, [], session)
 
     ing = session.get(Ingrediente, ingrediente_id)
     if not ing:
@@ -822,7 +777,7 @@ def listar_movimientos_ingrediente(
     """
     Return the movement history (ledger) for a single ingredient, most recent first.
     """
-    verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE", "INVENTARIO"], session)
+    verificar_rol_empleado(token_obj.credentials if token_obj else None, ["ADMIN", "GERENTE", "INVENTARIO"], session)
 
     ing = session.get(Ingrediente, ingrediente_id)
     if not ing:

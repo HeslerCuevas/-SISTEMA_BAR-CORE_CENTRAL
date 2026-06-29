@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlmodel import Session, select
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -7,7 +8,7 @@ import secrets
 
 from app.db.database import get_session
 from app.models.core_models import PasswordResetToken
-from app.core.security import oauth2_scheme, decode_access_token
+from app.core.security import oauth2_scheme, decode_access_token, security_bearer
 from app.services.audit_service import log_auditoria
 from app.services.email_service import enviar_email_reset_password
 from app.models.core_models import Cliente
@@ -95,19 +96,17 @@ def login_cliente(
     )
 
 
-# ─── Cambio de contraseña autenticado ─────────────────────────────────────────
-
 @router.post("/cambiar-password", response_model=PasswordResetResponse)
 def cambiar_password_cliente(
     payload: CambioPasswordClienteRequest,
     session: Session = Depends(get_session),
-    token: Optional[str] = Depends(oauth2_scheme)
+    token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
 ):
-    """El cliente cambia su propia contraseña, requiere la actual."""
-    if not token:
-        raise HTTPException(status_code=401, detail="Se requiere autenticación.")
 
-    t = decode_access_token(token)
+    if not token_obj:
+        raise HTTPException(status_code=401, detail="Token de autenticación requerido.")
+        
+    t = decode_access_token(token_obj.credentials)
     if not t:
         raise HTTPException(status_code=401, detail="Token inválido o expirado.")
 

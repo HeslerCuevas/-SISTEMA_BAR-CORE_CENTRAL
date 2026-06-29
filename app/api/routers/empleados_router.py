@@ -5,11 +5,31 @@ from sqlmodel import Session, select, col
 
 from app.db.database import get_session
 from app.models.core_models import Empleado, Rol, Sucursal
-from app.schemas.empleados_schema import EmpleadoCreate, EmpleadoUpdate, EmpleadoAdminResponse, EmpleadoDesactivarResponse
+from app.schemas.empleados_schema import EmpleadoCreate, EmpleadoUpdate, EmpleadoAdminResponse, EmpleadoDesactivarResponse, EmpleadoSyncResponse
 from app.services.audit_service import log_auditoria
 from app.core.security import get_password_hash, oauth2_scheme, verificar_rol_empleado, security_bearer
 
 router = APIRouter(prefix="/api/v1/empleados", tags=["Gestión de Personal"])
+
+
+from fastapi import Header
+import os
+
+@router.get("/sync", response_model=List[EmpleadoSyncResponse])
+def sincronizar_empleados_gateway(
+    incluir_inactivos: bool = Query(False, description="Incluir empleados inactivos"),
+    db: Session = Depends(get_session),
+    x_gateway_token: Optional[str] = Header(None)
+):
+    # Dedicated machine-to-machine endpoint for the Integration Gateway
+    gateway_secret = os.getenv("CORE_SECRET_KEY")
+    if not x_gateway_token or not gateway_secret or x_gateway_token != gateway_secret:
+        raise HTTPException(status_code=403, detail="Acceso denegado. Token de Gateway inválido.")
+        
+    stmt = select(Empleado)
+    if not incluir_inactivos:
+        stmt = stmt.where(col(Empleado.activo) == True)
+    return db.exec(stmt).all()
 
 
 @router.get("/", response_model=List[EmpleadoAdminResponse])
@@ -18,7 +38,10 @@ def obtener_todos_los_empleados(
     db: Session = Depends(get_session),
     token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
 ):
-    verificar_rol_empleado(token, ["ADMIN", "GERENTE"], db)
+    if not token_obj:
+        raise HTTPException(status_code=401, detail="Token de autenticación requerido.")
+    verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE"], db)
+    
     stmt = select(Empleado)
     if not incluir_inactivos:
         stmt = stmt.where(col(Empleado.activo) == True)
@@ -31,7 +54,7 @@ def obtener_empleado(
     db: Session = Depends(get_session),
     token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
 ):
-    verificar_rol_empleado(token, ["ADMIN", "GERENTE"], db)
+    verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE"], db)
     empleado = db.get(Empleado, empleado_id)
     if not empleado:
         raise HTTPException(status_code=404, detail="Empleado no encontrado.")
@@ -44,8 +67,6 @@ def crear_empleado(
     db: Session = Depends(get_session),
     token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
 ):
-    if not token_obj or not token_obj.credentials:
-        raise HTTPException(status_code=401, detail="Token Bearer ausente o inválido")
 
     info = verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE"], db)
 
@@ -96,8 +117,6 @@ def actualizar_empleado(
     db: Session = Depends(get_session),
     token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
 ):
-    if not token_obj or not token_obj.credentials:
-        raise HTTPException(status_code=401, detail="Token Bearer ausente o inválido")
 
     info = verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE"], db)
 
@@ -149,8 +168,6 @@ def desactivar_empleado(
     db: Session = Depends(get_session),
     token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
 ):
-    if not token_obj or not token_obj.credentials:
-        raise HTTPException(status_code=401, detail="Token Bearer ausente o inválido")
 
     info = verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE"], db)
 

@@ -167,7 +167,7 @@ class IngredientInventoryManager:
         pedido_id: Optional[int] = None,
         documento_referencia: Optional[str] = None,
         movimiento_local_uuid: Optional[str] = None,
-    ) -> Ingrediente:
+    ) -> tuple[Ingrediente, MovimientoIngrediente]:
         """
         Record an ingredient stock movement and update the ingredient's current
         quantity.
@@ -204,7 +204,7 @@ class IngredientInventoryManager:
                 )
             ).first()
             if previo:
-                return session.get(Ingrediente, ingrediente_id)
+                return session.get(Ingrediente, ingrediente_id), previo
 
         # ── Load ingredient ────────────────────────────────────────────────
         ingrediente = session.get(Ingrediente, ingrediente_id)
@@ -269,7 +269,7 @@ class IngredientInventoryManager:
         session.add(ingrediente)
         session.add(movimiento)
 
-        return ingrediente
+        return ingrediente, movimiento
 
     # ─── Batch consumption on order creation ──────────────────────────────────
 

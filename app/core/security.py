@@ -3,10 +3,11 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Union, Any, List
 from jose import jwt, JWTError
-from fastapi import Header, HTTPException, status, Depends
+from fastapi import Header, HTTPException
 from fastapi.security import OAuth2PasswordBearer
 from sqlmodel import Session
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPBearer
+from app.models.core_models import Empleado, Rol
 
 DEV_MODE = True
 
@@ -87,92 +88,7 @@ async def validate_gateway_token(x_gateway_token: str = Header(None)):
     return
 
 
-def get_current_empleado(
-        token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer),
-):
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="No autenticado o token expirado. Proporcione un Bearer token válido.",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-
-    if not token_obj or not token_obj.credentials:
-        raise credentials_exception
-
-    token = token_obj.credentials
-    payload = decode_access_token(token)
-
-    if payload is None:
-        raise credentials_exception
-
-    empleado_id = payload.get("sub")
-    if empleado_id is None:
-        raise credentials_exception
-
-    return {"empleado_id": int(empleado_id), "canal": payload.get("canal"), "payload": payload}
-
-
-def get_current_empleado_con_rol(session_getter):
-    pass
-
-
-def requerir_rol(*roles_permitidos: str):
-    """
-    Factoría de dependencias para control de acceso por rol.
-    """
-    from app.db.database import get_session
-    from app.models.core_models import Empleado, Rol
-
-    async def _check_rol(
-            token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer),
-    ):
-        credentials_exception = HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="No autenticado o token expirado.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-        forbidden_exception = HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Acceso denegado. Roles permitidos: {', '.join(roles_permitidos)}."
-        )
-
-        # 3. Extraemos el string del token (.credentials) también aquí
-        if not token_obj or not token_obj.credentials:
-            raise credentials_exception
-
-        token = token_obj.credentials
-        payload = decode_access_token(token)
-
-        if payload is None:
-            raise credentials_exception
-
-        empleado_id = payload.get("sub")
-        if not empleado_id:
-            raise credentials_exception
-
-        with Session(next((s for s in []), None) or __import__('app.db.database', fromlist=['engine']).engine) as db:
-            empleado = db.get(Empleado, int(empleado_id))
-            if not empleado or not empleado.activo:
-                raise credentials_exception
-            rol = db.get(Rol, empleado.rol_id)
-            if not rol or rol.nombre not in roles_permitidos:
-                raise forbidden_exception
-            return {"empleado_id": empleado.id, "rol": rol.nombre}
-
-    return _check_rol
-
-
 def verificar_rol_empleado(token: str, roles_permitidos: List[str], db: Session) -> dict:
-    """
-    Utilidad síncrona para verificar el rol de un empleado a partir de su token.
-    Se usa directamente dentro de los endpoints.
-    Retorna {empleado_id, rol, empleado} o lanza HTTPException.
-    """
-    if DEV_MODE and token == "mock_dev_token":
-        # Simula que eres el empleado ID 1 y tienes rol de ADMIN
-        return {"empleado_id": 1, "rol": "ADMIN", "empleado": None}
-
-    from app.models.core_models import Empleado, Rol
 
     if not token:
         raise HTTPException(status_code=401, detail="Token de autenticación requerido.")
