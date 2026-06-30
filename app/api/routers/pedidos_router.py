@@ -20,7 +20,7 @@ from app.logic.orders_manager import OrdersManager
 from app.logic.sales_manager import SalesManager
 from app.services.audit_service import log_auditoria
 
-from core.security import verificar_rol_empleado, security_bearer
+from app.core.security import verificar_rol_empleado, security_bearer
 
 
 

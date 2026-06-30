@@ -23,7 +23,7 @@ def seed_bar_data():
         else:
             print("La Sucursal 'Casa Matriz' ya existe.")
 
-        statement_rol = select(Rol).where(Rol.nombre == "Administrador")
+        statement_rol = select(Rol).where(Rol.nombre == "ADMIN")
         db_rol = session.exec(statement_rol).first()
 
         if not db_rol:
