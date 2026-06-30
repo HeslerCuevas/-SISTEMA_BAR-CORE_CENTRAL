@@ -19,3 +19,17 @@ class InventarioResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+class MovimientoInventarioResponse(BaseModel):
+    id: int
+    producto_id: int
+    empleado_id: Optional[int] = None
+    tipo_movimiento: str
+    cantidad: int
+    motivo: str
+    fecha_movimiento: datetime
+    movimiento_local_uuid: Optional[str] = None
+    factura_local_uuid: Optional[str] = None
+
+    class Config:
+        from_attributes = True

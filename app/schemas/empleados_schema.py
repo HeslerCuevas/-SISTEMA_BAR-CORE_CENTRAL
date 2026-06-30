@@ -81,3 +81,7 @@ class EmpleadoDesactivarResponse(BaseModel):
     mensaje: str
     empleado_id: int
     activo: bool
+
+class EmpleadoSyncResponse(EmpleadoAdminResponse):
+    password_hash: str
+

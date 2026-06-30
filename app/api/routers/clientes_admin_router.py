@@ -1,12 +1,13 @@
-﻿from typing import List, Optional
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlmodel import Session, select, col, or_
 
 from app.db.database import get_session
 from app.models.core_models import Cliente
 from app.schemas.clientes_schema import ClienteAdminResponse, ClienteListResponse, ClienteEstadoResponse
 from app.services.audit_service import log_auditoria
-from app.core.security import oauth2_scheme, verificar_rol_empleado
+from app.core.security import oauth2_scheme, verificar_rol_empleado, security_bearer
 
 router = APIRouter(prefix="/api/v1/admin/clientes", tags=["Administración de Clientes Móvil"])
 
@@ -18,9 +19,9 @@ def listar_clientes(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=500),
     db: Session = Depends(get_session),
-    token: Optional[str] = Depends(oauth2_scheme)
+    token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
 ):
-    verificar_rol_empleado(token, ["ADMIN", "GERENTE", "CAJERO"], db)
+    verificar_rol_empleado(token_obj.credentials if token_obj else None, ["ADMIN", "GERENTE", "CAJERO"], db)
 
     stmt = select(Cliente)
 
@@ -41,7 +42,7 @@ def listar_clientes(
     todos = db.exec(total_stmt).all()
     total = len(todos)
 
-    stmt = stmt.offset(skip).limit(limit)
+    stmt = stmt.order_by(col(Cliente.id)).offset(skip).limit(limit)
     clientes = db.exec(stmt).all()
 
     return ClienteListResponse(total=total, clientes=clientes)
@@ -51,9 +52,9 @@ def listar_clientes(
 def obtener_cliente(
     cliente_id: int,
     db: Session = Depends(get_session),
-    token: Optional[str] = Depends(oauth2_scheme)
+    token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
 ):
-    verificar_rol_empleado(token, ["ADMIN", "GERENTE", "CAJERO"], db)
+    verificar_rol_empleado(token_obj.credentials if token_obj else None, ["ADMIN", "GERENTE", "CAJERO"], db)
 
     cliente = db.get(Cliente, cliente_id)
     if not cliente:
@@ -65,9 +66,9 @@ def obtener_cliente(
 def desactivar_cliente(
     cliente_id: int,
     db: Session = Depends(get_session),
-    token: Optional[str] = Depends(oauth2_scheme)
+    token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
 ):
-    info = verificar_rol_empleado(token, ["ADMIN", "GERENTE"], db)
+    info = verificar_rol_empleado(token_obj.credentials if token_obj else None, ["ADMIN", "GERENTE"], db)
 
     cliente = db.get(Cliente, cliente_id)
     if not cliente:
@@ -96,9 +97,9 @@ def desactivar_cliente(
 def reactivar_cliente(
     cliente_id: int,
     db: Session = Depends(get_session),
-    token: Optional[str] = Depends(oauth2_scheme)
+    token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
 ):
-    info = verificar_rol_empleado(token, ["ADMIN", "GERENTE"], db)
+    info = verificar_rol_empleado(token_obj.credentials if token_obj else None, ["ADMIN", "GERENTE"], db)
 
     cliente = db.get(Cliente, cliente_id)
     if not cliente:
