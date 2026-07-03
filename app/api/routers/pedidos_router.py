@@ -1,11 +1,12 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Header
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlmodel import Session, select
 from decimal import Decimal
 import json
 from typing import List, Optional
+import os
 
 from app.db.database import get_session
 from app.models.core_models import (
@@ -35,14 +36,18 @@ router = APIRouter(
 def crear_pedido_completo(
         pedido_in: PedidoCreate,
         session: Session = Depends(get_session),
-        token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
+        token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer),
+        x_gateway_token: Optional[str] = Header(None)
 ):
+    gateway_secret = os.getenv("CORE_SECRET_KEY")
+    is_gateway = x_gateway_token and gateway_secret and x_gateway_token == gateway_secret
 
-    empleado_info = verificar_rol_empleado(
-        token_obj.credentials,
-        ["ADMIN", "GERENTE", "CAJERO"],
-        session
-    )
+    if not is_gateway:
+        empleado_info = verificar_rol_empleado(
+            token_obj.credentials,
+            ["ADMIN", "GERENTE", "CAJERO"],
+            session
+        )
 
     try:
         if pedido_in.factura_local_uuid:
@@ -79,13 +84,18 @@ def facturar_pedido(
     factura_local_uuid: str,
     payload: FacturarPedidoRequest,
     session: Session = Depends(get_session),
-    token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
+    token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer),
+    x_gateway_token: Optional[str] = Header(None)
 ):
-    empleado_info = verificar_rol_empleado(
-        token_obj.credentials,
-        ["ADMIN", "GERENTE", "CAJERO"],
-        session
-    )
+    gateway_secret = os.getenv("CORE_SECRET_KEY")
+    is_gateway = x_gateway_token and gateway_secret and x_gateway_token == gateway_secret
+
+    if not is_gateway:
+        empleado_info = verificar_rol_empleado(
+            token_obj.credentials,
+            ["ADMIN", "GERENTE", "CAJERO"],
+            session
+        )
 
     try:
         pedido_global = session.exec(
@@ -120,10 +130,14 @@ def cancelar_pedido(
     identificador: str,
     datos: CancelarPedidoRequest,
     session: Session = Depends(get_session),
-    token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
+    token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer),
+    x_gateway_token: Optional[str] = Header(None)
 ):
+    gateway_secret = os.getenv("CORE_SECRET_KEY")
+    is_gateway = x_gateway_token and gateway_secret and x_gateway_token == gateway_secret
 
-    verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE", "CAJERO"], session)
+    if not is_gateway:
+        verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE", "CAJERO"], session)
 
     try:
         pedido = session.exec(
@@ -153,10 +167,14 @@ def agregar_items_a_pedido(
     factura_local_uuid: str,
     payload: AgregarItemsRequest,
     session: Session = Depends(get_session),
-    token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
+    token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer),
+    x_gateway_token: Optional[str] = Header(None)
 ):
+    gateway_secret = os.getenv("CORE_SECRET_KEY")
+    is_gateway = x_gateway_token and gateway_secret and x_gateway_token == gateway_secret
 
-    verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE", "CAJERO"], session)
+    if not is_gateway:
+        verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE", "CAJERO"], session)
 
     try:
         pedido = session.exec(

@@ -7,7 +7,7 @@ from app.db.database import get_session
 from app.models.core_models import Empleado, Rol, Sucursal
 from app.schemas.empleados_schema import EmpleadoCreate, EmpleadoUpdate, EmpleadoAdminResponse, EmpleadoDesactivarResponse, EmpleadoSyncResponse
 from app.services.audit_service import log_auditoria
-from app.core.security import get_password_hash, oauth2_scheme, verificar_rol_empleado, security_bearer
+from app.core.security import get_password_hash, verificar_rol_empleado, security_bearer
 
 router = APIRouter(prefix="/api/v1/empleados", tags=["Gestión de Personal"])
 

@@ -8,7 +8,8 @@ import secrets
 
 from app.db.database import get_session
 from app.models.core_models import PasswordResetToken
-from app.core.security import oauth2_scheme, decode_access_token, security_bearer
+from app.core.timezone import get_local_now
+from app.core.security import decode_access_token, security_bearer
 from app.services.audit_service import log_auditoria
 from app.services.email_service import enviar_email_reset_password
 from app.models.core_models import Cliente
@@ -160,7 +161,7 @@ def solicitar_reset_cliente(
 
     token_plano = secrets.token_urlsafe(32)
     token_hash = hashlib.sha256(token_plano.encode()).hexdigest()
-    expira_en = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=TOKEN_RESET_EXPIRACION_MINUTOS)
+    expira_en = get_local_now() + timedelta(minutes=TOKEN_RESET_EXPIRACION_MINUTOS)
 
     reset_token = PasswordResetToken(
         token_hash=token_hash,
@@ -191,7 +192,7 @@ def confirmar_reset_cliente(
 ):
     """Valida el token y restablece la contraseña del cliente."""
     token_hash = hashlib.sha256(payload.token.encode()).hexdigest()
-    ahora = datetime.now(timezone.utc).replace(tzinfo=None)
+    ahora = get_local_now()
 
     reset_token = session.exec(
         select(PasswordResetToken).where(

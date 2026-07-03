@@ -1,7 +1,36 @@
-.venv
-.idea
+# Virtual environments
 .venv/
+<<<<<<< HEAD
 .idea/
 .DS_Store
 __pycache__/
 *.pyc
+=======
+venv/
+
+# IDEs
+.idea/
+.vscode/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment variables
+# .env
+
+# Pytest
+.pytest_cache/
+
+# Databases
+*.db
+
+# Coverage
+.coverage
+htmlcov/
+
+# OS files
+.DS_Store
+Thumbs.db
+>>>>>>> ac988c65d223fbc7005e4065cba1cb0ca5e8b37d

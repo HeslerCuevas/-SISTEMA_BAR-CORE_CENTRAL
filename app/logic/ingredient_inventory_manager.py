@@ -30,6 +30,7 @@ from app.models.core_models import (
     Producto,
     RecetaProducto,
 )
+from app.core.timezone import get_local_now
 
 # Movement types that ADD stock
 _TIPOS_ENTRADA = frozenset({"COMPRA", "AJUSTE_MANUAL", "CARGA_INICIAL", "DEVOLUCION"})
@@ -251,7 +252,7 @@ class IngredientInventoryManager:
 
         # ── Persist ────────────────────────────────────────────────────────
         ingrediente.cantidad_actual = cantidad_nueva
-        ingrediente.ultima_modificacion = datetime.now(timezone.utc)
+        ingrediente.ultima_modificacion = get_local_now()
 
         movimiento = MovimientoIngrediente(
             ingrediente_id=ingrediente_id,

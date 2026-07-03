@@ -68,7 +68,7 @@ CATEGORIAS = [
     (2, "Cócteles"),
     (3, "Comida"),
     (4, "Vinos"),
-    (5, "Bebidas No Alcohólicas")
+    (5, "Sin Alcohol")
 ]
 
 # (Id, CategoriaId, ImpuestoId, SKU, Nombre, Descripcion, PrecioBase, TipoControlInventario, Activo, ImagenURL)

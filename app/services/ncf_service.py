@@ -9,6 +9,7 @@ from fastapi import HTTPException
 
 from app.models.core_models import SecuenciaNcf, HistorialNcf
 from app.services.audit_service import log_auditoria
+from app.core.timezone import get_local_now
 
 
 # Tipos de NCF válidos en República Dominicana
@@ -35,7 +36,7 @@ def obtener_secuencia_activa(
     Obtiene la secuencia NCF activa y válida para el tipo dado.
     Lanza HTTPException si no hay secuencia disponible.
     """
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = get_local_now()
 
     stmt = select(SecuenciaNcf).where(
         SecuenciaNcf.tipo_ncf == tipo_ncf,
@@ -135,7 +136,7 @@ def asignar_ncf(
         "serie": secuencia.serie,
         "secuencia_id": secuencia.id,
         "pedido_id": pedido_id,
-        "fecha_asignacion": historial.fecha_asignacion or datetime.now(timezone.utc),
+        "fecha_asignacion": historial.fecha_asignacion or get_local_now(),
     }
 
 
@@ -148,7 +149,7 @@ def verificar_disponibilidad_ncf(
     Verifica cuántos NCF quedan disponibles para un tipo dado.
     No asigna ninguno, solo informa.
     """
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    now = get_local_now()
 
     stmt = select(SecuenciaNcf).where(
         SecuenciaNcf.tipo_ncf == tipo_ncf,

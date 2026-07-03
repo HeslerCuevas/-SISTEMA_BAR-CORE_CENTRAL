@@ -1,9 +1,9 @@
 from typing import Optional, List
 from decimal import Decimal
-from datetime import datetime, time
+from datetime import datetime
 import uuid
 from sqlmodel import SQLModel, Field, Relationship
-from sqlalchemy import Column, String, Integer, ForeignKey, Boolean, DateTime, text, Numeric, Time
+from sqlalchemy import Column, String, Integer, BigInteger, ForeignKey, Boolean, DateTime, text, Numeric
 from sqlalchemy.dialects.mssql import UNIQUEIDENTIFIER
 
 class Sucursal(SQLModel, table=True):
@@ -205,9 +205,12 @@ class Promocion(SQLModel, table=True):
     prioridad: int = Field(default=0, sa_column=Column("Prioridad", Integer, nullable=False, server_default=text("0")))
     # TODOS | PRODUCTOS | CATEGORIAS
     aplica_a: str = Field(default="TODOS", sa_column=Column("AplicaA", String(20), nullable=False, server_default=text("'TODOS'")))
+    # AUTOMATICA | ELEGIBILIDAD | CODIGO_PROMO | MANUAL
+    tipo_aplicacion: str = Field(default="AUTOMATICA", sa_column=Column("TipoAplicacion", String(20), nullable=False, server_default=text("'AUTOMATICA'")))
     aplica_happy_hour: bool = Field(default=False, sa_column=Column("AplicaHappyHour", Boolean, server_default=text("0")))
     hora_inicio_hh: Optional[str] = Field(default=None, sa_column=Column("HoraInicioHH", String(5)))
     hora_fin_hh: Optional[str] = Field(default=None, sa_column=Column("HoraFinHH", String(5)))
+    precio_minimo_final: Optional[Decimal] = Field(default=None, sa_column=Column("PrecioMinimoFinal", Numeric(12, 2)))
     fecha_creacion: datetime = Field(sa_column=Column("FechaCreacion", DateTime, server_default=text("GETDATE()")))
 
 
@@ -422,3 +425,70 @@ class MovimientoIngrediente(SQLModel, table=True):
     movimiento_local_uuid: Optional[str] = Field(
         default=None, sa_column=Column("Movimiento_Local_UUID", String(36))
     )
+
+
+# ─────────────────────────────────────────────────────────────────
+# SISTEMA DE PROMOCIONES EXTENDIDO
+# ─────────────────────────────────────────────────────────────────
+
+class CodigoPromocional(SQLModel, table=True):
+    """Promo codes linked to a promotion (Codigos_Promocionales table)."""
+    __tablename__ = "Codigos_Promocionales"
+    id: Optional[int] = Field(default=None, sa_column=Column("Id", Integer, primary_key=True))
+    promocion_id: int = Field(sa_column=Column("PromocionId", Integer, ForeignKey("Promociones.Id"), nullable=False))
+    codigo: str = Field(sa_column=Column("Codigo", String(50), unique=True, nullable=False))
+    fecha_inicio: datetime = Field(sa_column=Column("FechaInicio", DateTime, nullable=False))
+    fecha_fin: Optional[datetime] = Field(default=None, sa_column=Column("FechaFin", DateTime))
+    uso_maximo: Optional[int] = Field(default=None, sa_column=Column("UsoMaximo", Integer))
+    usos_actuales: int = Field(default=0, sa_column=Column("UsosActuales", Integer, nullable=False, server_default=text("0")))
+    un_uso_por_cliente: bool = Field(default=False, sa_column=Column("UnUsoPorCliente", Boolean, nullable=False, server_default=text("0")))
+    cliente_especifico_id: Optional[int] = Field(default=None, sa_column=Column("ClienteEspecificoId", Integer, ForeignKey("Clientes.Id")))
+    monto_minimo_compra: Optional[Decimal] = Field(default=None, sa_column=Column("MontoMinimoCompra", Numeric(12, 2)))
+    activo: bool = Field(default=True, sa_column=Column("Activo", Boolean, nullable=False, server_default=text("1")))
+    fecha_creacion: datetime = Field(sa_column=Column("FechaCreacion", DateTime, nullable=False, server_default=text("GETDATE()")))
+
+
+class PromocionElegibilidad(SQLModel, table=True):
+    """Eligibility config for ELEGIBILIDAD-type promotions (Promociones_Elegibilidad table)."""
+    __tablename__ = "Promociones_Elegibilidad"
+    id: Optional[int] = Field(default=None, sa_column=Column("Id", Integer, primary_key=True))
+    promocion_id: int = Field(sa_column=Column("PromocionId", Integer, ForeignKey("Promociones.Id"), unique=True, nullable=False))
+    etiqueta_identificador: str = Field(
+        default="Credential ID",
+        sa_column=Column("EtiquetaIdentificador", String(100), nullable=False, server_default=text("'Credential ID'"))
+    )
+    requiere_identificador: bool = Field(
+        default=True,
+        sa_column=Column("RequiereIdentificador", Boolean, nullable=False, server_default=text("1"))
+    )
+
+
+class AplicacionPromocion(SQLModel, table=True):
+    """Immutable audit ledger for every promotion application (Aplicaciones_Promocion table)."""
+    __tablename__ = "Aplicaciones_Promocion"
+    id: Optional[int] = Field(default=None, sa_column=Column("Id", BigInteger, primary_key=True))
+    promocion_id: Optional[int] = Field(default=None, sa_column=Column("PromocionId", Integer, ForeignKey("Promociones.Id")))
+    nombre_promocion_snap: str = Field(sa_column=Column("NombrePromocionSnap", String(150), nullable=False))
+    tipo_aplicacion: str = Field(sa_column=Column("TipoAplicacion", String(20), nullable=False))
+    pedido_id: Optional[int] = Field(default=None, sa_column=Column("PedidoId", Integer, ForeignKey("Pedidos_Global.Id")))
+    factura_uuid: Optional[uuid.UUID] = Field(default=None, sa_column=Column("FacturaUUID", UNIQUEIDENTIFIER))
+    empleado_id: Optional[int] = Field(default=None, sa_column=Column("EmpleadoId", Integer, ForeignKey("Empleados.Id")))
+    empleado_autorizador_id: Optional[int] = Field(default=None, sa_column=Column("EmpleadoAutorizadorId", Integer, ForeignKey("Empleados.Id")))
+    cliente_id: Optional[int] = Field(default=None, sa_column=Column("ClienteId", Integer, ForeignKey("Clientes.Id")))
+    identificador_capturado: Optional[str] = Field(default=None, sa_column=Column("IdentificadorCapturado", String(255)))
+    monto_descuento: Decimal = Field(default=Decimal("0"), sa_column=Column("MontoDescuento", Numeric(12, 2), nullable=False, server_default=text("0")))
+    terminal: Optional[str] = Field(default=None, sa_column=Column("Terminal", String(50)))
+    notas: Optional[str] = Field(default=None, sa_column=Column("Notas", String(500)))
+    fecha_hora: datetime = Field(sa_column=Column("FechaHora", DateTime, nullable=False, server_default=text("GETDATE()")))
+
+
+class SupervisorSessionAudit(SQLModel, table=True):
+    """Audit record for supervisor sessions synced from CAJA (SupervisorSessionAudit table)."""
+    __tablename__ = "SupervisorSessionAudit"
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, sa_column=Column("id", UNIQUEIDENTIFIER, primary_key=True))
+    supervisor_id: int = Field(sa_column=Column("supervisor_id", Integer, ForeignKey("Empleados.Id"), nullable=False))
+    cajero_id: int = Field(sa_column=Column("cajero_id", Integer, ForeignKey("Empleados.Id"), nullable=False))
+    terminal: str = Field(sa_column=Column("terminal", String(50), nullable=False))
+    inicio: datetime = Field(sa_column=Column("inicio", DateTime, nullable=False))
+    fin: datetime = Field(sa_column=Column("fin", DateTime, nullable=False))
+    motivo_fin: str = Field(sa_column=Column("motivo_fin", String(50), nullable=False))

@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 import uuid
 from fastapi import HTTPException
 from app.models.core_models import InventarioActual, MovimientoInventario
+from app.core.timezone import get_local_now
 
 
 class InventoryManager:
@@ -51,7 +52,7 @@ class InventoryManager:
             cantidad_a_registrar = cantidad - stock.cantidad_disponible
             stock.cantidad_disponible = cantidad
 
-        stock.ultima_modificacion = datetime.now(timezone.utc)
+        stock.ultima_modificacion = get_local_now()
 
         movimiento = MovimientoInventario(
             producto_id=producto_id,

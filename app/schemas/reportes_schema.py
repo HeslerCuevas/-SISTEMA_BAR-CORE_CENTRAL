@@ -1,6 +1,5 @@
 from pydantic import BaseModel
 from decimal import Decimal
-from typing import Optional
 
 class VentasDiaResponse(BaseModel):
     propina_legal: Decimal
@@ -39,4 +38,4 @@ class AlertaIngredienteResponse(BaseModel):
     deficit: Decimal  # cantidad_reorden - cantidad_actual (>= 0)
 
     class Config:
-        from_attributes = True
+        from_attributes = True

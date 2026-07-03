@@ -7,7 +7,7 @@ from app.db.database import get_session
 from app.models.core_models import Rol
 from app.schemas.roles_schema import RolCreate, RolUpdate, RolResponse
 from app.services.audit_service import log_auditoria
-from app.core.security import oauth2_scheme, verificar_rol_empleado, security_bearer
+from app.core.security import verificar_rol_empleado, security_bearer
 
 router = APIRouter(prefix="/api/v1/roles", tags=["Catálogos"])
 
