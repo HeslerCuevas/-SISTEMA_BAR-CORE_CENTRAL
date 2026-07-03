@@ -23,7 +23,7 @@ def seed_bar_data():
         else:
             print("La Sucursal 'Casa Matriz' ya existe.")
 
-        statement_rol = select(Rol).where(Rol.nombre == "Administrador")
+        statement_rol = select(Rol).where(Rol.nombre == "ADMIN")
         db_rol = session.exec(statement_rol).first()
 
         if not db_rol:
@@ -31,11 +31,11 @@ def seed_bar_data():
             session.add(db_rol)
             session.commit()
             session.refresh(db_rol)
-            print(f"Rol 'Administrador' creado.")
+            print(f"Rol 'ADMIN' creado.")
         else:
-            print("El Rol 'Administrador' ya existe.")
+            print("El Rol 'ADMIN' ya existe.")
 
-        statement_emp = select(Empleado).where(Empleado.email == "admin@bar.com")
+        statement_emp = select(Empleado).where(Empleado.email == "heslerarsenio@gmail.com")
         db_emp = session.exec(statement_emp).first()
 
         if not db_emp:
@@ -43,8 +43,8 @@ def seed_bar_data():
                 rol_id=db_rol.id,
                 sucursal_id=db_sucursal.id,
                 documento_identidad="001-0000000-1",
-                nombre_completo="Admin Bar CORE",
-                email="admin@bar.com",
+                nombre_completo="Admin Bar CORE - HESLER",
+                email="heslerarsenio@gmail.com",
                 password_hash=get_password_hash("Intec2026*"),
                 activo=True
             )

@@ -8,6 +8,7 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlmodel import Session
 from fastapi.security import HTTPBearer
 from app.models.core_models import Empleado, Rol
+from app.core.timezone import get_local_now
 
 DEV_MODE = True
 
@@ -43,9 +44,9 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def create_access_token(subject: Union[str, Any], canal: str, expires_delta: Optional[timedelta] = None) -> str:
     if expires_delta:
-        expire = datetime.now(timezone.utc) + expires_delta
+        expire = get_local_now() + expires_delta
     else:
-        expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        expire = get_local_now() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
 
     to_encode = {
         "exp": expire,

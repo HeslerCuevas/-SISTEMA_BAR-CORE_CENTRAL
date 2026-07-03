@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional, Literal
+from typing import Literal, Optional, List
 from datetime import datetime
 from decimal import Decimal
 import uuid
@@ -14,7 +14,7 @@ class PedidoCreate(BaseModel):
     cliente_id: Optional[int] = None
     canal_origen: Literal["CAJA", "MOVIL", "WEB"]
     mesa: Optional[int] = None
-    propina_extra: Decimal = 0.0
+    propina_extra: Decimal = Decimal("0.0")
     factura_local_uuid: Optional[uuid.UUID] = None
     detalles: list[DetallePedidoCreate]
 
@@ -53,10 +53,6 @@ class CancelarPedidoRequest(BaseModel):
     empleado_id: int
     motivo: str
 
-
-from pydantic import BaseModel
-from typing import List, Optional
-import uuid
 
 class DetalleItemAdicional(BaseModel):
     detalle_local_uuid: uuid.UUID

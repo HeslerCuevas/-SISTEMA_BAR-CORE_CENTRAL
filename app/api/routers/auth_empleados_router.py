@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm, HTTPAuthorizationCredentials
 from sqlmodel import Session, select
 from sqlalchemy import or_
@@ -8,6 +8,7 @@ import hashlib
 import secrets
 
 from app.db.database import get_session
+from app.core.timezone import get_local_now
 from app.schemas.auth_schema import (
     LoginResponse,
     CambioPasswordEmpleadoRequest,
@@ -166,7 +167,7 @@ def solicitar_reset_password_empleado(
     # Generar token único
     token_plano = secrets.token_urlsafe(32)
     token_hash = hashlib.sha256(token_plano.encode()).hexdigest()
-    expira_en = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=TOKEN_RESET_EXPIRACION_MINUTOS)
+    expira_en = get_local_now() + timedelta(minutes=TOKEN_RESET_EXPIRACION_MINUTOS)
 
     reset_token = PasswordResetToken(
         token_hash=token_hash,
@@ -197,7 +198,7 @@ def confirmar_reset_password_empleado(
 ):
     """Valida el token de reset y establece la nueva contraseña."""
     token_hash = hashlib.sha256(payload.token.encode()).hexdigest()
-    ahora = datetime.now(timezone.utc).replace(tzinfo=None)
+    ahora = get_local_now()
 
     reset_token = session.exec(
         select(PasswordResetToken).where(

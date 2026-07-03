@@ -80,7 +80,8 @@ def crear_producto(
         session: Session = Depends(get_session),
         token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)):
 
-    verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE"], session)
+    token = token_obj.credentials if token_obj else None
+    verificar_rol_empleado(token, ["ADMIN", "GERENTE"], session)
 
     # ── Verificar si Categoría e Impuesto existen y están activos ────────────
     cat = session.get(Categoria, producto_in.categoria_id)
@@ -206,8 +207,8 @@ def crear_categoria(
     token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
 ):
 
-
-    verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE"], session)
+    token = token_obj.credentials if token_obj else None
+    verificar_rol_empleado(token, ["ADMIN", "GERENTE"], session)
 
     existente = session.exec(select(Categoria).where(Categoria.nombre == payload.nombre)).first()
     if existente:
@@ -239,8 +240,8 @@ def actualizar_categoria(
     token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
 ):
 
-
-    verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE"], session)
+    token = token_obj.credentials if token_obj else None
+    verificar_rol_empleado(token, ["ADMIN", "GERENTE"], session)
 
     cat = session.get(Categoria, categoria_id)
     if not cat:
@@ -282,8 +283,8 @@ def desactivar_categoria(
     token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
 ):
 
-
-    verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE"], session)
+    token = token_obj.credentials if token_obj else None
+    verificar_rol_empleado(token, ["ADMIN", "GERENTE"], session)
 
     cat = session.get(Categoria, categoria_id)
     if not cat:
@@ -379,7 +380,8 @@ def crear_impuesto(
     token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
 ):
 
-    verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE"], session)
+    token = token_obj.credentials if token_obj else None
+    verificar_rol_empleado(token, ["ADMIN", "GERENTE"], session)
 
     existente = session.exec(select(Impuesto).where(Impuesto.nombre == payload.nombre)).first()
     if existente:
@@ -411,7 +413,8 @@ def actualizar_impuesto(
     token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
 ):
 
-    verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE"], session)
+    token = token_obj.credentials if token_obj else None
+    verificar_rol_empleado(token, ["ADMIN", "GERENTE"], session)
 
     imp = session.get(Impuesto, impuesto_id)
     if not imp:
@@ -453,7 +456,8 @@ def desactivar_impuesto(
     token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
 ):
 
-    verificar_rol_empleado(token_obj.credentials, ["ADMIN"], session)
+    token = token_obj.credentials if token_obj else None
+    verificar_rol_empleado(token, ["ADMIN"], session)
 
     imp = session.get(Impuesto, impuesto_id)
     if not imp:
@@ -502,7 +506,8 @@ def actualizar_producto_parcial(
     token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
 ):
 
-    verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE"], session)
+    token = token_obj.credentials if token_obj else None
+    verificar_rol_empleado(token, ["ADMIN", "GERENTE"], session)
 
     producto = session.get(Producto, producto_id)
     if not producto:
@@ -543,7 +548,8 @@ def desactivar_producto(
     token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
 ):
 
-    verificar_rol_empleado(token_obj.credentials, ["ADMIN", "GERENTE"], session)
+    token = token_obj.credentials if token_obj else None
+    verificar_rol_empleado(token, ["ADMIN", "GERENTE"], session)
 
     producto = session.get(Producto, producto_id)
     if not producto:

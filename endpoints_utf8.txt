@@ -1,0 +1,127 @@
+
+app\api\routers\auth_clientes_router.py:36:@router.post("/registro", response_model=ClienteRegistroResponse, 
+status_code=201)
+app\api\routers\auth_clientes_router.py:70:@router.post("/login", response_model=ClienteLoginResponse)
+app\api\routers\auth_clientes_router.py:100:@router.post("/cambiar-password", response_model=PasswordResetResponse)
+app\api\routers\auth_clientes_router.py:135:@router.post("/solicitar-reset", response_model=PasswordResetResponse)
+app\api\routers\auth_clientes_router.py:188:@router.post("/confirmar-reset", response_model=PasswordResetResponse)
+app\api\routers\auth_empleados_router.py:35:@router.post("/login", response_model=LoginResponse)
+app\api\routers\auth_empleados_router.py:73:@router.post("/cambiar-password", response_model=PasswordResetResponse)
+app\api\routers\auth_empleados_router.py:108:@router.post("/empleados/{empleado_id}/cambiar-password-admin", 
+response_model=PasswordResetResponse)
+app\api\routers\auth_empleados_router.py:139:@router.post("/solicitar-reset", response_model=PasswordResetResponse)
+app\api\routers\auth_empleados_router.py:194:@router.post("/confirmar-reset", response_model=PasswordResetResponse)
+app\api\routers\clientes_admin_router.py:15:@router.get("/", response_model=ClienteListResponse)
+app\api\routers\clientes_admin_router.py:51:@router.get("/{cliente_id}", response_model=ClienteAdminResponse)
+app\api\routers\clientes_admin_router.py:65:@router.post("/{cliente_id}/desactivar", 
+response_model=ClienteEstadoResponse)
+app\api\routers\clientes_admin_router.py:96:@router.post("/{cliente_id}/reactivar", 
+response_model=ClienteEstadoResponse)
+app\api\routers\empleados_router.py:18:@router.get("/sync", response_model=List[EmpleadoSyncResponse])
+app\api\routers\empleados_router.py:35:@router.get("/", response_model=List[EmpleadoAdminResponse])
+app\api\routers\empleados_router.py:51:@router.get("/{empleado_id}", response_model=EmpleadoAdminResponse)
+app\api\routers\empleados_router.py:64:@router.post("/", response_model=EmpleadoAdminResponse, status_code=201)
+app\api\routers\empleados_router.py:113:@router.patch("/{empleado_id}", response_model=EmpleadoAdminResponse)
+app\api\routers\empleados_router.py:165:@router.delete("/{empleado_id}/desactivar", 
+response_model=EmpleadoDesactivarResponse)
+app\api\routers\ingredientes_router.py:42:@router.get("/categorias", response_model=List[CategoriaIngredienteResponse])
+app\api\routers\ingredientes_router.py:55:@router.get("/categorias/{categoria_id}", 
+response_model=CategoriaIngredienteResponse)
+app\api\routers\ingredientes_router.py:68:@router.post("/categorias", response_model=CategoriaIngredienteResponse, 
+status_code=201)
+app\api\routers\ingredientes_router.py:103:@router.put("/categorias/{categoria_id}", 
+response_model=CategoriaIngredienteResponse)
+app\api\routers\ingredientes_router.py:148:@router.delete("/categorias/{categoria_id}", response_model=dict)
+app\api\routers\ingredientes_router.py:192:@router.get("/disponibilidad", 
+response_model=List[DisponibilidadProductoResponse])
+app\api\routers\ingredientes_router.py:247:@router.get("/disponibilidad/{producto_id}", 
+response_model=DisponibilidadProductoResponse)
+app\api\routers\ingredientes_router.py:289:@router.post("/movimiento", response_model=MovimientoIngredienteResponse, 
+status_code=201)
+app\api\routers\ingredientes_router.py:345:@router.post("/recetas", response_model=RecetaProductoResponse, 
+status_code=201)
+app\api\routers\ingredientes_router.py:480:@router.get("/recetas/{producto_id}", response_model=RecetaProductoResponse)
+app\api\routers\ingredientes_router.py:523:@router.delete("/recetas/{producto_id}", response_model=dict)
+app\api\routers\ingredientes_router.py:575:@router.get("/", response_model=List[IngredienteResponse])
+app\api\routers\ingredientes_router.py:594:@router.post("/", response_model=IngredienteResponse, status_code=201)
+app\api\routers\ingredientes_router.py:656:@router.patch("/{ingrediente_id}", response_model=IngredienteResponse)
+app\api\routers\ingredientes_router.py:713:@router.delete("/{ingrediente_id}", response_model=dict)
+app\api\routers\ingredientes_router.py:755:@router.get("/{ingrediente_id}", response_model=IngredienteResponse)
+app\api\routers\ingredientes_router.py:769:@router.get("/{ingrediente_id}/movimientos", 
+response_model=List[MovimientoIngredienteResponse])
+app\api\routers\inventario_router.py:24:@router.post("/movimiento", status_code=201)
+app\api\routers\inventario_router.py:76:@router.get("/{producto_id}", response_model=InventarioResponse)
+app\api\routers\inventario_router.py:122:@router.get("/productos/{producto_id}/movimientos", 
+response_model=List[MovimientoInventarioResponse])
+app\api\routers\inventario_router.py:143:@router.get("/ingredientes/{ingrediente_id}/movimientos", 
+response_model=List[MovimientoIngredienteResponse])
+app\api\routers\mesa_router.py:55:@router.post("/vincular", response_model=MesaVincularResponse)
+app\api\routers\mesa_router.py:86:@router.post("/llamar-mesero", response_model=LlamarMeseroResponse)
+app\api\routers\mesa_router.py:105:@router.get("/admin", response_model=List[MesaAdminResponse])
+app\api\routers\mesa_router.py:123:@router.get("/admin/{mesa_id}", response_model=MesaAdminResponse)
+app\api\routers\mesa_router.py:137:@router.post("/admin", response_model=MesaAdminResponse, status_code=201)
+app\api\routers\mesa_router.py:176:@router.put("/admin/{mesa_id}", response_model=MesaAdminResponse)
+app\api\routers\mesa_router.py:215:@router.delete("/admin/{mesa_id}", response_model=dict)
+app\api\routers\pedidos_router.py:35:@router.post("/", response_model=PedidoResponse)
+app\api\routers\pedidos_router.py:84:@router.post("/{factura_local_uuid}/facturar", response_model=PedidoResponse)
+app\api\routers\pedidos_router.py:132:@router.post("/{identificador}/cancelar")
+app\api\routers\pedidos_router.py:171:@router.patch("/{factura_local_uuid}/agregar-items")
+app\api\routers\pedidos_router.py:226:@router.get("/{factura_local_uuid}/resumen", 
+response_model=ResumenCuentaResponse)
+app\api\routers\pedidos_router.py:265:@router.get("/{factura_local_uuid}", response_model=PedidoResponse)
+app\api\routers\pedidos_router.py:277:@router.post("/{factura_local_uuid}/solicitar-cuenta")
+app\api\routers\pedidos_router.py:304:@router.post(
+app\api\routers\pedidos_router.py:370:@router.get(
+app\api\routers\pedidos_router.py:401:@router.post("/{factura_local_uuid}/dividir-cuenta", 
+response_model=SplitBillResponse)
+app\api\routers\pedidos_router.py:478:@router.get("/{factura_local_uuid}/division-cuenta", 
+response_model=SplitBillResponse)
+app\api\routers\productos_router.py:24:@router.get("/", response_model=List[ProductoResponse])
+app\api\routers\productos_router.py:52:@router.get("/por-categoria/{categoria_id}", 
+response_model=List[ProductoResponse])
+app\api\routers\productos_router.py:77:@router.post("/", response_model=ProductoResponse, status_code=201)
+app\api\routers\productos_router.py:183:@router.get("/categorias", response_model=List[CategoriaResponse])
+app\api\routers\productos_router.py:194:@router.get("/categorias/{categoria_id}", response_model=CategoriaResponse)
+app\api\routers\productos_router.py:202:@router.post("/categorias", response_model=CategoriaResponse, status_code=201)
+app\api\routers\productos_router.py:234:@router.put("/categorias/{categoria_id}", response_model=CategoriaResponse)
+app\api\routers\productos_router.py:278:@router.delete("/categorias/{categoria_id}", response_model=dict)
+app\api\routers\productos_router.py:352:@router.get("/impuestos", response_model=List[ImpuestoResponse])
+app\api\routers\productos_router.py:367:@router.get("/impuestos/{impuesto_id}", response_model=ImpuestoResponse)
+app\api\routers\productos_router.py:375:@router.post("/impuestos", response_model=ImpuestoResponse, status_code=201)
+app\api\routers\productos_router.py:406:@router.put("/impuestos/{impuesto_id}", response_model=ImpuestoResponse)
+app\api\routers\productos_router.py:449:@router.delete("/impuestos/{impuesto_id}", response_model=dict)
+app\api\routers\productos_router.py:492:@router.get("/{producto_id}", response_model=ProductoResponse)
+app\api\routers\productos_router.py:497:@router.patch("/{producto_id}", response_model=ProductoResponse)
+app\api\routers\productos_router.py:539:@router.delete("/{producto_id}", response_model=dict)
+app\api\routers\promociones_router.py:26:@router.get("/", response_model=List[PromocionResponse])
+app\api\routers\promociones_router.py:50:@router.get("/{promocion_id}", response_model=PromocionResponse)
+app\api\routers\promociones_router.py:66:@router.post("/", response_model=PromocionResponse, status_code=201)
+app\api\routers\promociones_router.py:108:@router.put("/{promocion_id}", response_model=PromocionResponse)
+app\api\routers\promociones_router.py:169:@router.delete("/{promocion_id}", response_model=dict)
+app\api\routers\promociones_router.py:195:@router.get("/evaluar/item", response_model=List[PromocionAplicadaResponse])
+app\api\routers\promociones_router.py:210:@router.get("/evaluar/mejor-descuento", 
+response_model=Optional[PromocionAplicadaResponse])
+app\api\routers\promociones_router.py:225:@router.get("/evaluar/globales", 
+response_model=List[PromocionAplicadaResponse])
+app\api\routers\promociones_router.py:236:@router.get("/happy-hour/activo", response_model=dict)
+app\api\routers\promociones_router.py:265:@router.patch("/{promocion_id}/reactivar", response_model=dict)
+app\api\routers\promociones_router.py:291:@router.get("/codigos", response_model=list)
+app\api\routers\promociones_router.py:303:@router.post("/supervisor/auth")
+app\api\routers\promociones_router.py:313:@router.post("/supervisor/sessions/sync", response_model=dict)
+app\api\routers\reportes_router.py:22:@router.get("/ventas-hoy", response_model=VentasDiaResponse)
+app\api\routers\reportes_router.py:56:@router.get("/top-productos-vendidos", 
+response_model=List[RankingProductosResponse])
+app\api\routers\reportes_router.py:71:@router.get("/productos-stock-bajo", response_model=List[AlertaStockResponse])
+app\api\routers\reportes_router.py:95:@router.get("/ingredientes-stock-bajo", 
+response_model=List[AlertaIngredienteResponse])
+app\api\routers\roles_router.py:15:@router.get("/", response_model=List[RolResponse])
+app\api\routers\roles_router.py:21:@router.get("/{rol_id}", response_model=RolResponse)
+app\api\routers\roles_router.py:29:@router.post("/", response_model=RolResponse, status_code=201)
+app\api\routers\roles_router.py:54:@router.put("/{rol_id}", response_model=RolResponse)
+app\api\routers\sucursales_router.py:15:@router.get("/", response_model=List[SucursalResponse])
+app\api\routers\sucursales_router.py:27:@router.get("/{sucursal_id}", response_model=SucursalResponse)
+app\api\routers\sucursales_router.py:38:@router.post("/", response_model=SucursalResponse, status_code=201)
+app\api\routers\sucursales_router.py:63:@router.put("/{sucursal_id}", response_model=SucursalResponse)
+app\api\routers\sucursales_router.py:105:@router.delete("/{sucursal_id}", response_model=dict)
+
+

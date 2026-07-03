@@ -2,13 +2,12 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlmodel import Session, select, col
-from datetime import datetime
 
 from app.db.database import get_session
 from app.models.core_models import Sucursal
 from app.schemas.sucursales_schema import SucursalCreate, SucursalUpdate, SucursalResponse
 from app.services.audit_service import log_auditoria
-from app.core.security import oauth2_scheme, verificar_rol_empleado, security_bearer
+from app.core.security import verificar_rol_empleado, security_bearer
 
 router = APIRouter(prefix="/api/v1/sucursales", tags=["Catálogos"])
 

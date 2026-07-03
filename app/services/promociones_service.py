@@ -11,6 +11,7 @@ from app.models.core_models import (
     Promocion, PromocionProducto, PromocionCategoria, Producto
 )
 from app.services.audit_service import log_auditoria
+from app.core.timezone import get_local_now
 
 
 def _hora_en_rango(hora_actual: str, hora_inicio: str, hora_fin: str) -> bool:
@@ -55,12 +56,26 @@ def _es_happy_hour(promocion: Promocion, ahora: datetime) -> bool:
 
 
 def calcular_descuento_promocion(promocion: Promocion, subtotal: Decimal) -> Decimal:
-    """Calcula el monto de descuento para una promoción dado un subtotal."""
+    """Calcula el monto de descuento para una promoción dado un subtotal.
+    
+    Si la promocion tiene precio_minimo_final configurado, el descuento nunca
+    reducirá el precio por debajo de ese valor.
+    """
     if promocion.tipo_descuento == "PORCENTAJE":
-        return (subtotal * promocion.valor / Decimal("100")).quantize(Decimal("0.01"))
+        descuento = (subtotal * promocion.valor / Decimal("100")).quantize(Decimal("0.01"))
     elif promocion.tipo_descuento == "MONTO_FIJO":
-        return min(promocion.valor, subtotal)
-    return Decimal("0.00")
+        descuento = min(promocion.valor, subtotal)
+    else:
+        return Decimal("0.00")
+    
+    # Enforce minimum final price floor
+    if promocion.precio_minimo_final is not None:
+        precio_final_min = Decimal(str(promocion.precio_minimo_final))
+        precio_final_calculado = subtotal - descuento
+        if precio_final_calculado < precio_final_min:
+            descuento = max(Decimal("0.00"), subtotal - precio_final_min)
+    
+    return descuento
 
 
 def evaluar_promociones_para_item(
@@ -71,9 +86,9 @@ def evaluar_promociones_para_item(
 ) -> List[dict]:
     """
     Evalúa todas las promociones vigentes que aplican a un producto/categoría.
-    Retorna lista ordenada por prioridad DESC con los descuentos calculados.
+    Retorna lista ordenaada por prioridad DESC con los descuentos calculados.
     """
-    ahora = datetime.now(timezone.utc).replace(tzinfo=None)
+    ahora = get_local_now()
 
     # Traer todas las promociones activas
     stmt = select(Promocion).where(Promocion.activo == True).order_by(Promocion.prioridad.desc())
@@ -152,7 +167,7 @@ def evaluar_promociones_globales(
     Evalúa todas las promociones de tipo TODOS sobre el total de un pedido.
     Útil para descuentos globales.
     """
-    ahora = datetime.now(timezone.utc).replace(tzinfo=None)
+    ahora = get_local_now()
 
     stmt = select(Promocion).where(
         Promocion.activo == True,

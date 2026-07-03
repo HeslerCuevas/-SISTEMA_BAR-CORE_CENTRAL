@@ -43,6 +43,11 @@ from models import (  # noqa: F401
     MovimientoIngrediente,
     ComponenteReceta,
     RecetaProducto,
+    SupervisorSessionAudit,
+    AplicacionPromocion,
+    PromocionElegibilidad,
+    CodigoPromocional,
+    SupervisorSessionAudit,
 )
 
 env_path = Path(__file__).resolve().parent.parent / ".env"
