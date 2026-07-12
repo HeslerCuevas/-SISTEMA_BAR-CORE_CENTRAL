@@ -13,6 +13,7 @@ from app.services.audit_service import log_auditoria
 from app.core.security import validate_gateway_token
 from fastapi.security import APIKeyHeader
 
+# uvicorn app.main:app --reload
 
 gateway_token_scheme = APIKeyHeader(
     name="X-Gateway-Token",

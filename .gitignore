@@ -1,5 +1,11 @@
 # Virtual environments
 .venv/
+<<<<<<< HEAD
+.idea/
+.DS_Store
+__pycache__/
+*.pyc
+=======
 venv/
 
 # IDEs
@@ -27,3 +33,4 @@ htmlcov/
 # OS files
 .DS_Store
 Thumbs.db
+>>>>>>> ac988c65d223fbc7005e4065cba1cb0ca5e8b37d
