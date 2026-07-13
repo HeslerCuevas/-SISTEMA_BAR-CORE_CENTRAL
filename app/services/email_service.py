@@ -1,32 +1,303 @@
 """
 Servicio de Email para envío de correos de recuperación de contraseña.
 Usa smtplib con configuración por variables de entorno.
+
+- Clientes: el link usa custom URI scheme (nocturnalbar://reset-password?token=...)
+  para abrir directamente la app móvil.
+- Empleados: el link apunta a la URL del admin web (FRONTEND_URL/admin/reset-password?token=...).
 """
 import os
+import base64
 import smtplib
 import logging
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.image import MIMEImage
+from pathlib import Path
 from fastapi import HTTPException
 
 logger = logging.getLogger("EmailService")
 
-SMTP_HOST = os.getenv("SMTP_HOST", "")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER = os.getenv("SMTP_USER", "")
+SMTP_HOST     = os.getenv("SMTP_HOST", "")
+SMTP_PORT     = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER     = os.getenv("SMTP_USER", "")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
-SMTP_FROM = os.getenv("SMTP_FROM", "noreply@corebarlounge.com")
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+SMTP_FROM     = os.getenv("SMTP_FROM", "noreply@nocturnalbar.com")
+FRONTEND_URL  = os.getenv("FRONTEND_URL", "http://localhost:3000")
+
+# Path to the bar logo (relative to this file's location, two levels up)
+_LOGO_PATH = Path(__file__).parent.parent.parent.parent / "LOGO_NORCTURAL_BAR.png"
 
 
 def _email_configurado() -> bool:
     return bool(SMTP_HOST and SMTP_USER and SMTP_PASSWORD)
 
 
+def _load_logo_bytes() -> bytes | None:
+    """Try to load the bar logo as bytes. Returns None if unavailable."""
+    try:
+        if _LOGO_PATH.exists():
+            return _LOGO_PATH.read_bytes()
+    except Exception as exc:
+        logger.warning(f"Could not load logo from {_LOGO_PATH}: {exc}")
+    return None
+
+
+# ─── HTML Templates ──────────────────────────────────────────────────────────
+
+def _build_html_cliente(reset_link: str, has_logo: bool) -> str:
+    logo_block = ""
+    if has_logo:
+        logo_block = """
+        <img src="cid:nocturnal_logo" alt="Nocturnal Bar"
+             style="max-width:160px; height:auto; display:block; margin:0 auto 24px auto;" />
+"""
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reset Your Password — Nocturnal Bar</title>
+</head>
+<body style="margin:0;padding:0;background-color:#0F131C;font-family:'Segoe UI',Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#0F131C;padding:40px 16px;">
+    <tr>
+      <td align="center">
+        <!-- Card -->
+        <table width="100%" cellpadding="0" cellspacing="0"
+               style="max-width:520px;background-color:#1C1F29;border-radius:24px;
+                      border:1px solid #31353F;overflow:hidden;">
+
+          <!-- Header gradient band -->
+          <tr>
+            <td style="background:linear-gradient(135deg,#FF6B00 0%,#A04100 100%);
+                       padding:32px 32px 24px 32px;text-align:center;">
+              {logo_block}
+              <p style="margin:0;font-size:11px;font-weight:700;letter-spacing:5px;
+                         color:rgba(255,255,255,0.6);text-transform:uppercase;">
+                NOCTURNAL BAR
+              </p>
+              <h1 style="margin:8px 0 0 0;font-size:28px;font-weight:900;
+                          color:#FFFFFF;letter-spacing:2px;">
+                Password Reset
+              </h1>
+            </td>
+          </tr>
+
+          <!-- Body -->
+          <tr>
+            <td style="padding:36px 36px 28px 36px;">
+              <p style="margin:0 0 16px 0;font-size:16px;line-height:1.6;color:#DFE2EF;">
+                Hey there, Nocturnal guest!
+              </p>
+              <p style="margin:0 0 24px 0;font-size:15px;line-height:1.7;color:#B0B5C5;">
+                Someone (hopefully you 😉) requested a password reset for your
+                <strong style="color:#FFB693;">Nocturnal Bar</strong> account.
+                Tap the button below — it'll open the app directly so you can
+                set your new password right away.
+              </p>
+
+              <!-- CTA Button -->
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center" style="padding:8px 0 28px 0;">
+                    <a href="{reset_link}"
+                       style="display:inline-block;background:linear-gradient(135deg,#FF6B00,#FFB693);
+                              color:#350F00;text-decoration:none;font-size:15px;font-weight:800;
+                              letter-spacing:1.5px;padding:16px 40px;border-radius:14px;
+                              text-transform:uppercase;">
+                      RESET MY PASSWORD
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Divider -->
+              <hr style="border:none;border-top:1px solid #31353F;margin:0 0 24px 0;" />
+
+              <!-- Expiry notice -->
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td width="36" valign="top" style="padding-top:2px;">
+                    <div style="width:32px;height:32px;border-radius:50%;
+                                background:rgba(255,107,0,0.12);text-align:center;
+                                line-height:32px;font-size:16px;">
+                      ⏱
+                    </div>
+                  </td>
+                  <td style="padding-left:12px;">
+                    <p style="margin:0;font-size:13px;color:#B0B5C5;line-height:1.6;">
+                      This link expires in <strong style="color:#FFB693;">30 minutes</strong>.
+                      After that, you'll need to request a new one from the app.
+                    </p>
+                  </td>
+                </tr>
+                <tr><td colspan="2" height="16"></td></tr>
+                <tr>
+                  <td width="36" valign="top" style="padding-top:2px;">
+                    <div style="width:32px;height:32px;border-radius:50%;
+                                background:rgba(255,107,0,0.12);text-align:center;
+                                line-height:32px;font-size:16px;">
+                      🔒
+                    </div>
+                  </td>
+                  <td style="padding-left:12px;">
+                    <p style="margin:0;font-size:13px;color:#B0B5C5;line-height:1.6;">
+                      If you didn't request this, you can safely ignore this email.
+                      Your password won't change unless you tap the button above.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background-color:#181B25;padding:20px 36px;border-top:1px solid #31353F;">
+              <p style="margin:0;font-size:11px;color:#6B7280;text-align:center;line-height:1.6;">
+                © Nocturnal Bar &amp; Lounge — All rights reserved.<br />
+                This is an automated message. Please do not reply.
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+"""
+
+
+def _build_html_empleado(reset_link: str, has_logo: bool) -> str:
+    logo_block = ""
+    if has_logo:
+        logo_block = """
+        <img src="cid:nocturnal_logo" alt="Nocturnal Bar"
+             style="max-width:140px; height:auto; display:block; margin:0 auto 20px auto;" />
+"""
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Staff Password Reset — Nocturnal Bar</title>
+</head>
+<body style="margin:0;padding:0;background-color:#F3F4F6;font-family:'Segoe UI',Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#F3F4F6;padding:40px 16px;">
+    <tr>
+      <td align="center">
+        <!-- Card -->
+        <table width="100%" cellpadding="0" cellspacing="0"
+               style="max-width:540px;background-color:#FFFFFF;border-radius:16px;
+                      box-shadow:0 4px 24px rgba(0,0,0,0.10);overflow:hidden;">
+
+          <!-- Header -->
+          <tr>
+            <td style="background:#0F131C;padding:32px 36px 24px 36px;text-align:center;">
+              {logo_block}
+              <p style="margin:0;font-size:10px;font-weight:700;letter-spacing:5px;
+                         color:rgba(255,182,147,0.7);text-transform:uppercase;">
+                NOCTURNAL BAR — STAFF PORTAL
+              </p>
+              <h1 style="margin:8px 0 0 0;font-size:24px;font-weight:800;
+                          color:#FFFFFF;letter-spacing:1px;">
+                Password Reset Request
+              </h1>
+            </td>
+          </tr>
+
+          <!-- Orange accent line -->
+          <tr>
+            <td height="4"
+                style="background:linear-gradient(90deg,#FF6B00,#FFB693,#FF6B00);
+                       font-size:0;line-height:0;">
+              &nbsp;
+            </td>
+          </tr>
+
+          <!-- Body -->
+          <tr>
+            <td style="padding:36px 36px 28px 36px;">
+              <p style="margin:0 0 16px 0;font-size:16px;font-weight:700;color:#111827;">
+                Hello, Nocturnal Staff Member,
+              </p>
+              <p style="margin:0 0 20px 0;font-size:15px;line-height:1.7;color:#374151;">
+                A password reset was requested for your staff account on the
+                <strong>Nocturnal Bar Management System</strong>.
+                Click the button below to set a new password.
+              </p>
+              <p style="margin:0 0 28px 0;font-size:14px;line-height:1.7;color:#6B7280;">
+                For your security, this link is single-use and will expire in
+                <strong style="color:#FF6B00;">30 minutes</strong>.
+                If you did not make this request, please contact your
+                system administrator immediately.
+              </p>
+
+              <!-- CTA Button -->
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center" style="padding:8px 0 32px 0;">
+                    <a href="{reset_link}"
+                       style="display:inline-block;background:#0F131C;
+                              color:#FFB693;text-decoration:none;font-size:14px;
+                              font-weight:700;letter-spacing:1.5px;padding:16px 40px;
+                              border-radius:10px;text-transform:uppercase;
+                              border:2px solid #FF6B00;">
+                      RESET STAFF PASSWORD
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Security box -->
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="background:#FFF7ED;border-left:4px solid #FF6B00;
+                             border-radius:0 8px 8px 0;padding:16px 20px;">
+                    <p style="margin:0;font-size:13px;color:#92400E;line-height:1.6;">
+                      <strong>Security notice:</strong> Nocturnal Bar will never ask you
+                      for your password by email, phone or chat. This email was sent
+                      automatically because a reset was requested.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background:#F9FAFB;padding:20px 36px;
+                       border-top:1px solid #E5E7EB;">
+              <p style="margin:0;font-size:11px;color:#9CA3AF;
+                         text-align:center;line-height:1.6;">
+                © Nocturnal Bar &amp; Lounge — Management System<br />
+                This is an automated message. Please do not reply to this email.
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+"""
+
+
+# ─── Main send function ───────────────────────────────────────────────────────
+
 def enviar_email_reset_password(email_destino: str, token: str, tipo: str = "empleado"):
     """
     Envía el correo de recuperación de contraseña.
     tipo: 'empleado' | 'cliente'
+
+    Clientes → deep-link a la app móvil (nocturnalbar://reset-password?token=...)
+    Empleados → enlace web al panel de administración
     """
     if not _email_configurado():
         logger.warning(
@@ -36,59 +307,79 @@ def enviar_email_reset_password(email_destino: str, token: str, tipo: str = "emp
         # En desarrollo, retorna sin error para poder usar el token por logs
         return
 
-    ruta = "admin/reset-password" if tipo == "empleado" else "cliente/reset-password"
-    reset_link = f"{FRONTEND_URL}/{ruta}?token={token}"
+    # ── Build reset link ──────────────────────────────────────────────────────
+    if tipo == "cliente":
+        # Opens the mobile app directly via custom URI scheme
+        reset_link = f"nocturnalbar://reset-password?token={token}"
+        subject    = "Reset Your Nocturnal Bar Password 🔐"
+    else:
+        reset_link = f"{FRONTEND_URL}/admin/reset-password?token={token}"
+        subject    = "Staff Password Reset — Nocturnal Bar Management System"
 
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = "Password Recovery — CORE Bar & Lounge"
-    msg["From"] = SMTP_FROM
-    msg["To"] = email_destino
+    # ── Load logo ─────────────────────────────────────────────────────────────
+    logo_bytes = _load_logo_bytes()
+    has_logo   = logo_bytes is not None
 
-    texto_plain = f"""
-Hello,
+    # ── Build message ─────────────────────────────────────────────────────────
+    msg = MIMEMultipart("related")
+    msg["Subject"] = subject
+    msg["From"]    = f"Nocturnal Bar <{SMTP_FROM}>"
+    msg["To"]      = email_destino
 
-You received this email because a password reset was requested for your account.
+    # Alternative part (plain + html)
+    alternative = MIMEMultipart("alternative")
+    msg.attach(alternative)
 
-Click the following link to continue (expires in 30 minutes):
+    # Plain text fallback
+    if tipo == "cliente":
+        texto_plain = f"""Hello, Nocturnal guest!
+
+Someone requested a password reset for your Nocturnal Bar account.
+
+Tap the link below to open the app and set your new password:
 {reset_link}
 
-If you did not request this change, please ignore this message.
+This link expires in 30 minutes. If you didn't request this, simply ignore this email.
 
-— CORE Bar & Lounge
+— Nocturnal Bar
+"""
+    else:
+        texto_plain = f"""Hello, Nocturnal Staff Member,
+
+A password reset was requested for your staff account on the Nocturnal Bar Management System.
+
+Click the link below to set your new password:
+{reset_link}
+
+This link expires in 30 minutes. If you did not make this request, please contact your system administrator immediately.
+
+— Nocturnal Bar Management System
 """
 
-    texto_html = f"""
-<html>
-<body style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px;">
-  <h2 style="color: #333;">Password Recovery</h2>
-  <p>You received this email because a password reset was requested for your account.</p>
-  <p>Click the button below to continue (expires in <strong>30 minutes</strong>):</p>
-  <p style="text-align:center; margin: 30px 0;">
-    <a href="{reset_link}"
-       style="background:#1a1a2e;color:#fff;padding:14px 28px;border-radius:6px;
-              text-decoration:none;font-size:16px;">
-      Reset Password
-    </a>
-  </p>
-  <p style="color:#888;font-size:12px;">
-    If you did not request this change, please ignore this message. The link will expire automatically.
-  </p>
-  <hr style="border:none;border-top:1px solid #eee;margin-top:30px;">
-  <p style="color:#aaa;font-size:11px;">CORE Bar &amp; Lounge — Management System</p>
-</body>
-</html>
-"""
+    html_body = (
+        _build_html_cliente(reset_link, has_logo)
+        if tipo == "cliente"
+        else _build_html_empleado(reset_link, has_logo)
+    )
 
-    msg.attach(MIMEText(texto_plain, "plain"))
-    msg.attach(MIMEText(texto_html, "html"))
+    alternative.attach(MIMEText(texto_plain, "plain", "utf-8"))
+    alternative.attach(MIMEText(html_body,   "html",  "utf-8"))
 
+    # Attach logo as inline image with CID
+    if has_logo:
+        logo_mime = MIMEImage(logo_bytes, _subtype="png")
+        logo_mime.add_header("Content-ID", "<nocturnal_logo>")
+        logo_mime.add_header("Content-Disposition", "inline", filename="logo.png")
+        msg.attach(logo_mime)
+
+    # ── Send ─────────────────────────────────────────────────────────────────
     try:
         with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as server:
             server.ehlo()
             server.starttls()
             server.login(SMTP_USER, SMTP_PASSWORD)
             server.sendmail(SMTP_FROM, email_destino, msg.as_string())
-        logger.info(f"Email de reset enviado exitosamente a {email_destino}")
+        logger.info(f"Email de reset ({tipo}) enviado exitosamente a {email_destino}")
     except smtplib.SMTPAuthenticationError:
         logger.error("Error de autenticación SMTP. Verifica SMTP_USER y SMTP_PASSWORD.")
         raise HTTPException(

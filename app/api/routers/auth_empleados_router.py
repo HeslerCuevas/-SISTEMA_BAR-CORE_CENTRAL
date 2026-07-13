@@ -3,7 +3,7 @@ from fastapi.security import OAuth2PasswordRequestForm, HTTPAuthorizationCredent
 from sqlmodel import Session, select
 from sqlalchemy import or_
 from typing import Optional
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 import hashlib
 import secrets
 
@@ -20,7 +20,7 @@ from app.schemas.auth_schema import (
 from app.models.core_models import Empleado, Rol, PasswordResetToken
 from app.core.security import (
     verify_password, create_access_token, get_password_hash,
-    oauth2_scheme, verificar_rol_empleado, decode_access_token, security_bearer
+    verificar_rol_empleado, decode_access_token, security_bearer
 )
 from app.services.audit_service import log_auditoria
 from app.services.email_service import enviar_email_reset_password
@@ -29,8 +29,6 @@ router = APIRouter(prefix="/api/v1/auth", tags=["Seguridad"])
 
 TOKEN_RESET_EXPIRACION_MINUTOS = 30
 
-
-# ─── Login ─────────────────────────────────────────────────────────────────────
 
 @router.post("/login", response_model=LoginResponse)
 def login(
