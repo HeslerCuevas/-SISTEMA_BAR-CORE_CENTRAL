@@ -1,6 +1,5 @@
-
 -- ═════════════════════════════════════════════════════════════════
--- Core_Master_DB — Script completo v2
+-- Core_Master_DB — Script completo v3
 -- Idempotente: seguro para ejecutar múltiples veces
 -- ═════════════════════════════════════════════════════════════════
 
@@ -249,11 +248,37 @@ BEGIN
         Activo BIT NOT NULL DEFAULT 1,
         Prioridad INT NOT NULL DEFAULT 0,
         AplicaA NVARCHAR(20) NOT NULL DEFAULT 'TODOS',
+        -- AUTOMATICA | ELEGIBILIDAD | CODIGO_PROMO | MANUAL
+        TipoAplicacion NVARCHAR(20) NOT NULL DEFAULT 'AUTOMATICA',
         AplicaHappyHour BIT NOT NULL DEFAULT 0,
         HoraInicioHH NVARCHAR(5) NULL,
         HoraFinHH NVARCHAR(5) NULL,
+        PrecioMinimoFinal NUMERIC(12,2) NULL,
         FechaCreacion DATETIME NOT NULL DEFAULT GETDATE()
     );
+END
+GO
+
+-- Migración: Promociones ya existe sin columnas del sistema extendido
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID('dbo.Promociones') AND name = 'TipoAplicacion'
+)
+BEGIN
+    ALTER TABLE dbo.Promociones
+    ADD TipoAplicacion NVARCHAR(20) NOT NULL DEFAULT 'AUTOMATICA';
+    PRINT 'Columna TipoAplicacion agregada a Promociones.';
+END
+GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID('dbo.Promociones') AND name = 'PrecioMinimoFinal'
+)
+BEGIN
+    ALTER TABLE dbo.Promociones
+    ADD PrecioMinimoFinal NUMERIC(12,2) NULL;
+    PRINT 'Columna PrecioMinimoFinal agregada a Promociones.';
 END
 GO
 
@@ -316,6 +341,50 @@ BEGIN
 END
 GO
 
+IF OBJECT_ID('dbo.Aplicaciones_Promocion', 'U') IS NULL
+BEGIN
+    -- Ledger inmutable de cada aplicación de promoción (sync desde CAJA)
+    CREATE TABLE Aplicaciones_Promocion (
+        Id BIGINT IDENTITY(1,1) PRIMARY KEY,
+        PromocionId INT NULL,
+        NombrePromocionSnap NVARCHAR(150) NOT NULL,
+        TipoAplicacion NVARCHAR(20) NOT NULL,
+        PedidoId INT NULL,
+        FacturaUUID UNIQUEIDENTIFIER NULL,
+        EmpleadoId INT NULL,
+        EmpleadoAutorizadorId INT NULL,
+        ClienteId INT NULL,
+        IdentificadorCapturado NVARCHAR(255) NULL,
+        MontoDescuento NUMERIC(12,2) NOT NULL DEFAULT 0,
+        Terminal NVARCHAR(50) NULL,
+        Notas NVARCHAR(500) NULL,
+        FechaHora DATETIME NOT NULL DEFAULT GETDATE(),
+        CONSTRAINT FK_AplicacionesPromocion_Promociones FOREIGN KEY (PromocionId) REFERENCES Promociones(Id),
+        CONSTRAINT FK_AplicacionesPromocion_PedidosGlobal FOREIGN KEY (PedidoId) REFERENCES Pedidos_Global(Id),
+        CONSTRAINT FK_AplicacionesPromocion_Empleados FOREIGN KEY (EmpleadoId) REFERENCES Empleados(Id),
+        CONSTRAINT FK_AplicacionesPromocion_EmpleadosAutorizador FOREIGN KEY (EmpleadoAutorizadorId) REFERENCES Empleados(Id),
+        CONSTRAINT FK_AplicacionesPromocion_Clientes FOREIGN KEY (ClienteId) REFERENCES Clientes(Id)
+    );
+END
+GO
+
+IF OBJECT_ID('dbo.SupervisorSessionAudit', 'U') IS NULL
+BEGIN
+    -- Auditoría de sesiones de supervisor sincronizadas desde CAJA
+    CREATE TABLE SupervisorSessionAudit (
+        id UNIQUEIDENTIFIER NOT NULL PRIMARY KEY DEFAULT NEWID(),
+        supervisor_id INT NOT NULL,
+        cajero_id INT NOT NULL,
+        terminal NVARCHAR(50) NOT NULL,
+        inicio DATETIME NOT NULL,
+        fin DATETIME NOT NULL,
+        motivo_fin NVARCHAR(50) NOT NULL,
+        CONSTRAINT FK_SupervisorSessionAudit_Supervisor FOREIGN KEY (supervisor_id) REFERENCES Empleados(Id),
+        CONSTRAINT FK_SupervisorSessionAudit_Cajero FOREIGN KEY (cajero_id) REFERENCES Empleados(Id)
+    );
+END
+GO
+
 IF OBJECT_ID('dbo.Promociones_Productos', 'U') IS NULL
 BEGIN
     CREATE TABLE Promociones_Productos (
@@ -336,6 +405,43 @@ BEGIN
         CategoriaId INT NOT NULL,
         CONSTRAINT FK_PromocionesCategorias_Promociones FOREIGN KEY (PromocionId) REFERENCES Promociones(Id),
         CONSTRAINT FK_PromocionesCategorias_Categorias FOREIGN KEY (CategoriaId) REFERENCES Categorias(Id)
+    );
+END
+GO
+
+-- ─────────────────────────────────────────────────────────────────
+-- SISTEMA DE PROMOCIONES EXTENDIDO — TABLAS BASE
+-- ─────────────────────────────────────────────────────────────────
+
+IF OBJECT_ID('dbo.Codigos_Promocionales', 'U') IS NULL
+BEGIN
+    CREATE TABLE Codigos_Promocionales (
+        Id INT IDENTITY(1,1) PRIMARY KEY,
+        PromocionId INT NOT NULL,
+        Codigo NVARCHAR(50) NOT NULL UNIQUE,
+        FechaInicio DATETIME NOT NULL,
+        FechaFin DATETIME NULL,
+        UsoMaximo INT NULL,
+        UsosActuales INT NOT NULL DEFAULT 0,
+        UnUsoPorCliente BIT NOT NULL DEFAULT 0,
+        ClienteEspecificoId INT NULL,
+        MontoMinimoCompra NUMERIC(12,2) NULL,
+        Activo BIT NOT NULL DEFAULT 1,
+        FechaCreacion DATETIME NOT NULL DEFAULT GETDATE(),
+        CONSTRAINT FK_CodigosPromocionales_Promociones FOREIGN KEY (PromocionId) REFERENCES Promociones(Id),
+        CONSTRAINT FK_CodigosPromocionales_Clientes FOREIGN KEY (ClienteEspecificoId) REFERENCES Clientes(Id)
+    );
+END
+GO
+
+IF OBJECT_ID('dbo.Promociones_Elegibilidad', 'U') IS NULL
+BEGIN
+    CREATE TABLE Promociones_Elegibilidad (
+        Id INT IDENTITY(1,1) PRIMARY KEY,
+        PromocionId INT NOT NULL UNIQUE,
+        EtiquetaIdentificador NVARCHAR(100) NOT NULL DEFAULT 'Credential ID',
+        RequiereIdentificador BIT NOT NULL DEFAULT 1,
+        CONSTRAINT FK_PromocionesElegibilidad_Promociones FOREIGN KEY (PromocionId) REFERENCES Promociones(Id)
     );
 END
 GO
@@ -518,7 +624,7 @@ BEGIN
 END
 GO
 
-PRINT '✔ Todas las tablas creadas/migradas correctamente (v2).';
+PRINT '✔ Todas las tablas creadas/migradas correctamente (v3 — promociones extendido).';
 GO
 
 
@@ -589,6 +695,15 @@ IF NOT EXISTS (SELECT 1 FROM dbo.Mesas WHERE Numero = 1)
     (3, 'Mesa terraza',            6, 1, 'qr-token-mesa-003'),
     (4, 'Mesa privada',            8, 1, 'qr-token-mesa-004'),
     (5, 'Mesa barra',              2, 1, 'qr-token-mesa-005');
+GO
+
+-- ─────────────────────────────────────────────────────────────────
+-- Core_Logs
+-- ─────────────────────────────────────────────────────────────────
+IF NOT EXISTS (SELECT 1 FROM dbo.Core_Logs)
+    INSERT INTO dbo.Core_Logs (Nivel, Origen, Mensaje, Data_JSON) VALUES
+    ('INFO', 'Seed_Script', 'Base de datos inicializada con datos de prueba', NULL),
+    ('INFO', 'Sync_CAJA',   'Sincronización inicial completada correctamente', NULL);
 GO
 
 -- ─────────────────────────────────────────────────────────────────
@@ -664,12 +779,17 @@ GO
 
 -- ─────────────────────────────────────────────────────────────────
 -- Promociones
+-- Se agregan 'Descuento Estudiantes' (ELEGIBILIDAD) y 'Cupon Bienvenida10'
+-- (CODIGO_PROMO) para poder alimentar Promociones_Elegibilidad y
+-- Codigos_Promocionales, que antes no tenían ningún dato de prueba.
 -- ─────────────────────────────────────────────────────────────────
 IF NOT EXISTS (SELECT 1 FROM dbo.Promociones WHERE Nombre = 'Happy Hour Bebidas')
-    INSERT INTO dbo.Promociones (Nombre, Descripcion, TipoDescuento, Valor, FechaInicio, FechaFin, Activo, Prioridad, AplicaA, AplicaHappyHour, HoraInicioHH, HoraFinHH) VALUES
-    ('Happy Hour Bebidas', '20% de descuento en bebidas alcoholicas',  'PORCENTAJE', 20.00, GETDATE(), DATEADD(MONTH, 3, GETDATE()), 1, 1, 'CATEGORIAS', 1, '17:00', '19:00'),
-    ('Descuento Apertura', 'RD$100 de descuento en platos fuertes',    'MONTO_FIJO', 100.00, GETDATE(), DATEADD(MONTH, 1, GETDATE()), 1, 2, 'CATEGORIAS', 0, NULL, NULL),
-    ('Promo General 10%',  '10% de descuento en toda la cuenta',       'PORCENTAJE', 10.00, GETDATE(), NULL,                          1, 0, 'TODOS',      0, NULL, NULL);
+    INSERT INTO dbo.Promociones (Nombre, Descripcion, TipoDescuento, Valor, FechaInicio, FechaFin, Activo, Prioridad, AplicaA, TipoAplicacion, AplicaHappyHour, HoraInicioHH, HoraFinHH, PrecioMinimoFinal) VALUES
+    ('Happy Hour Bebidas',    '20% de descuento en bebidas alcoholicas',                       'PORCENTAJE', 20.00, GETDATE(), DATEADD(MONTH, 3, GETDATE()), 1, 1, 'CATEGORIAS', 'AUTOMATICA',   1, '17:00', '19:00', NULL),
+    ('Descuento Apertura',    'RD$100 de descuento en platos fuertes',                         'MONTO_FIJO', 100.00, GETDATE(), DATEADD(MONTH, 1, GETDATE()), 1, 2, 'CATEGORIAS', 'AUTOMATICA',   0, NULL,    NULL,    NULL),
+    ('Promo General 10%',     '10% de descuento en toda la cuenta',                            'PORCENTAJE', 10.00, GETDATE(), NULL,                          1, 0, 'TODOS',      'AUTOMATICA',   0, NULL,    NULL,    NULL),
+    ('Descuento Estudiantes', '15% de descuento presentando carnet estudiantil',               'PORCENTAJE', 15.00, GETDATE(), NULL,                          1, 3, 'TODOS',      'ELEGIBILIDAD', 0, NULL,    NULL,    NULL),
+    ('Cupon Bienvenida10',    '10% de descuento con código promocional de bienvenida',         'PORCENTAJE', 10.00, GETDATE(), DATEADD(MONTH, 6, GETDATE()), 1, 4, 'TODOS',      'CODIGO_PROMO', 0, NULL,    NULL,    200.00);
 GO
 
 -- ─────────────────────────────────────────────────────────────────
@@ -704,6 +824,48 @@ IF NOT EXISTS (SELECT 1 FROM dbo.Pedidos_Global)
 GO
 
 -- ─────────────────────────────────────────────────────────────────
+-- Aplicaciones_Promocion (ledger sincronizado desde CAJA)
+-- Antes sin datos de prueba: se agregan 2 registros de ejemplo,
+-- uno para una promoción AUTOMATICA y otro para una CODIGO_PROMO.
+-- ─────────────────────────────────────────────────────────────────
+IF NOT EXISTS (SELECT 1 FROM dbo.Aplicaciones_Promocion)
+BEGIN
+    INSERT INTO dbo.Aplicaciones_Promocion
+        (PromocionId, NombrePromocionSnap, TipoAplicacion, PedidoId, FacturaUUID, EmpleadoId, EmpleadoAutorizadorId, ClienteId, IdentificadorCapturado, MontoDescuento, Terminal, Notas)
+    SELECT p.Id, p.Nombre, p.TipoAplicacion, pg.Id, pg.Factura_Local_UUID, pg.EmpleadoId, NULL, pg.ClienteId, NULL, 110.00, 'CAJA-01', 'Aplicado automáticamente en pedido de salón'
+    FROM dbo.Promociones p
+    CROSS JOIN dbo.Pedidos_Global pg
+    WHERE p.Nombre = 'Promo General 10%' AND pg.Mesa = '1'
+
+    UNION ALL
+
+    SELECT p.Id, p.Nombre, p.TipoAplicacion, pg.Id, pg.Factura_Local_UUID, pg.EmpleadoId,
+           (SELECT Id FROM dbo.Empleados WHERE Email = 'luisa.fernandez@coredb.com'),
+           pg.ClienteId, 'BIENVENIDA10', 68.00, 'CAJA-02', 'Código promocional validado por supervisor'
+    FROM dbo.Promociones p
+    CROSS JOIN dbo.Pedidos_Global pg
+    WHERE p.Nombre = 'Cupon Bienvenida10' AND pg.Mesa = '2';
+END
+GO
+
+-- ─────────────────────────────────────────────────────────────────
+-- SupervisorSessionAudit
+-- Antes sin datos de prueba: se agregan 2 sesiones de ejemplo.
+-- ─────────────────────────────────────────────────────────────────
+IF NOT EXISTS (SELECT 1 FROM dbo.SupervisorSessionAudit)
+    INSERT INTO dbo.SupervisorSessionAudit (supervisor_id, cajero_id, terminal, inicio, fin, motivo_fin)
+    SELECT
+        (SELECT Id FROM dbo.Empleados WHERE Email = 'luisa.fernandez@coredb.com'),
+        (SELECT Id FROM dbo.Empleados WHERE Email = 'miguel.soto@coredb.com'),
+        'CAJA-01', DATEADD(HOUR, -3, GETDATE()), DATEADD(HOUR, -2, GETDATE()), 'AUTORIZACION_DESCUENTO'
+    UNION ALL
+    SELECT
+        (SELECT Id FROM dbo.Empleados WHERE Email = 'pedro.martinez@coredb.com'),
+        (SELECT Id FROM dbo.Empleados WHERE Email = 'miguel.soto@coredb.com'),
+        'CAJA-02', DATEADD(HOUR, -1, GETDATE()), DATEADD(MINUTE, -45, GETDATE()), 'CIERRE_TURNO';
+GO
+
+-- ─────────────────────────────────────────────────────────────────
 -- Promociones_Productos
 -- ─────────────────────────────────────────────────────────────────
 IF NOT EXISTS (SELECT 1 FROM dbo.Promociones_Productos)
@@ -717,6 +879,26 @@ GO
 IF NOT EXISTS (SELECT 1 FROM dbo.Promociones_Categorias)
     INSERT INTO dbo.Promociones_Categorias (PromocionId, CategoriaId) VALUES
     (1, 5), (2, 2);
+GO
+
+-- ─────────────────────────────────────────────────────────────────
+-- Codigos_Promocionales
+-- Antes sin datos de prueba: código asociado a 'Cupon Bienvenida10'.
+-- ─────────────────────────────────────────────────────────────────
+IF NOT EXISTS (SELECT 1 FROM dbo.Codigos_Promocionales WHERE Codigo = 'BIENVENIDA10')
+    INSERT INTO dbo.Codigos_Promocionales (PromocionId, Codigo, FechaInicio, FechaFin, UsoMaximo, UnUsoPorCliente, MontoMinimoCompra, Activo)
+    SELECT Id, 'BIENVENIDA10', GETDATE(), DATEADD(MONTH, 6, GETDATE()), 500, 1, 300.00, 1
+    FROM dbo.Promociones WHERE Nombre = 'Cupon Bienvenida10';
+GO
+
+-- ─────────────────────────────────────────────────────────────────
+-- Promociones_Elegibilidad
+-- Antes sin datos de prueba: regla asociada a 'Descuento Estudiantes'.
+-- ─────────────────────────────────────────────────────────────────
+IF NOT EXISTS (SELECT 1 FROM dbo.Promociones_Elegibilidad)
+    INSERT INTO dbo.Promociones_Elegibilidad (PromocionId, EtiquetaIdentificador, RequiereIdentificador)
+    SELECT Id, 'Carnet Estudiantil', 1
+    FROM dbo.Promociones WHERE Nombre = 'Descuento Estudiantes';
 GO
 
 -- ─────────────────────────────────────────────────────────────────
@@ -808,3 +990,5 @@ IF NOT EXISTS (SELECT 1 FROM dbo.Modificadores_Item)
     (NEWID(), 'Sin cebolla');
 GO
 
+PRINT '✔ Seed de datos de prueba completado (v3 — incluye promociones extendido y auditoría).';
+GO
