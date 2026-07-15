@@ -159,3 +159,57 @@ class ConfirmarResetRequest(BaseModel):
 
 class PasswordResetResponse(BaseModel):
     mensaje: str
+
+
+# ─── Actualización de perfil ──────────────────────────────────────────────────
+
+class ActualizarPerfilRequest(BaseModel):
+    """Para que un cliente actualice su nombre."""
+    nombre_completo: str
+
+    @field_validator('nombre_completo')
+    @classmethod
+    def nombre_valido(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError('El nombre no puede estar vacío.')
+        if len(v) > 150:
+            raise ValueError('El nombre no puede exceder 150 caracteres.')
+        return v
+
+
+class ActualizarPerfilResponse(BaseModel):
+    mensaje: str
+    nombre_completo: str
+
+
+# ─── Cambio de email con doble confirmación ───────────────────────────────────
+
+class SolicitarCambioEmailRequest(BaseModel):
+    """Solicita un cambio de email. Requiere contraseña actual para confirmar la identidad."""
+    nuevo_email: str
+    password_actual: str
+
+    @field_validator('nuevo_email')
+    @classmethod
+    def email_valido(cls, v: str) -> str:
+        v = v.strip().lower()
+        if not re.match(r'^[^\s@]+@[^\s@]+\.[^\s@]{2,}$', v):
+            raise ValueError('El nuevo correo electrónico no tiene un formato válido.')
+        if len(v) > 150:
+            raise ValueError('El correo electrónico no puede exceder 150 caracteres.')
+        return v
+
+
+# ─── Eliminación de cuenta (soft delete) ─────────────────────────────────────
+
+class SolicitarEliminacionRequest(BaseModel):
+    """Requiere contraseña actual para confirmar la identidad antes de enviar el email de eliminación."""
+    password_actual: str
+
+
+# ─── Reactivación de cuenta ───────────────────────────────────────────────────
+
+class SolicitarReactivacionRequest(BaseModel):
+    """Solicita la reactivación de una cuenta desactivada por email."""
+    email: str

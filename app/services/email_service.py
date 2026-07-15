@@ -398,3 +398,142 @@ This link expires in 30 minutes. If you did not make this request, please contac
             status_code=503,
             detail="Error interno al enviar el correo. Intenta más tarde."
         )
+
+# ─── Missing Templates Restored ───────────────────────────────────────────────
+
+def _build_html_generic(title: str, text1: str, text2: str, btn_text: str = None, btn_link: str = None, has_logo: bool = True) -> str:
+    logo_block = """<img src="cid:nocturnal_logo" alt="Nocturnal Bar" style="max-width:160px; height:auto; display:block; margin:0 auto 24px auto;" />""" if has_logo else ""
+    
+    btn_html = ""
+    if btn_text and btn_link:
+        btn_html = f"""
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center" style="padding:8px 0 28px 0;">
+                    <a href="{btn_link}"
+                       style="display:inline-block;background:linear-gradient(135deg,#FF6B00,#FFB693);
+                              color:#350F00;text-decoration:none;font-size:15px;font-weight:800;
+                              letter-spacing:1.5px;padding:16px 40px;border-radius:14px;
+                              text-transform:uppercase;">
+                      {btn_text}
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              <hr style="border:none;border-top:1px solid #31353F;margin:0 0 24px 0;" />
+        """
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /></head>
+<body style="margin:0;padding:0;background-color:#0F131C;font-family:'Segoe UI',Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#0F131C;padding:40px 16px;">
+    <tr>
+      <td align="center">
+        <table width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background-color:#1C1F29;border-radius:24px;border:1px solid #31353F;overflow:hidden;">
+          <tr>
+            <td style="background:linear-gradient(135deg,#FF6B00 0%,#A04100 100%);padding:32px;text-align:center;">
+              {logo_block}
+              <h1 style="margin:8px 0 0 0;font-size:26px;font-weight:900;color:#FFFFFF;letter-spacing:2px;">{title}</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:36px;">
+              <p style="margin:0 0 16px 0;font-size:16px;line-height:1.6;color:#DFE2EF;">{text1}</p>
+              <p style="margin:0 0 24px 0;font-size:15px;line-height:1.7;color:#B0B5C5;">{text2}</p>
+              {btn_html}
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+"""
+
+def enviar_email_cambio_password_notificacion(email_destino: str, recovery_plano: str) -> None:
+    html = _build_html_generic(
+        "Security Alert", 
+        "Your password was recently changed.", 
+        f"If you made this change, you can safely ignore this email. Otherwise, contact support immediately.",
+        has_logo=True
+    )
+    _enviar_email(email_destino, "Security Alert: Password Changed", "Your password was changed.", html, "SECURITY")
+
+def enviar_email_confirmacion_cambio_email_viejo(email_destino: str, nuevo_email: str, token: str) -> None:
+    link = f"nocturnalbar://confirm-email-change?token={token}"
+    html = _build_html_generic(
+        "Email Change Request", 
+        f"We received a request to change your email to {nuevo_email}.", 
+        "Tap the button to authorize this change.",
+        "AUTHORIZE CHANGE", link, True
+    )
+    _enviar_email(email_destino, "Authorize Email Change", "Authorize email change.", html, "EMAIL_CHANGE_OLD")
+
+def enviar_email_verificacion_nuevo_email(nuevo_email: str, token: str) -> None:
+    link = f"nocturnalbar://verify-new-email?token={token}"
+    html = _build_html_generic(
+        "Verify New Email", 
+        "You requested to use this email for your Nocturnal Bar account.", 
+        "Tap the button to verify this email address.",
+        "VERIFY EMAIL", link, True
+    )
+    _enviar_email(nuevo_email, "Verify New Email", "Verify new email.", html, "EMAIL_CHANGE_NEW")
+
+def enviar_email_solicitud_eliminacion(email_destino: str, token: str) -> None:
+    link = f"nocturnalbar://confirm-delete?token={token}"
+    html = _build_html_generic(
+        "Account Deletion", 
+        "We received a request to delete your account.", 
+        "Tap the button below to confirm. This action cannot be undone.",
+        "CONFIRM DELETION", link, True
+    )
+    _enviar_email(email_destino, "Confirm Account Deletion", "Confirm deletion.", html, "ACCOUNT_DELETE")
+
+def enviar_email_reactivacion(email_destino: str, token: str) -> None:
+    link = f"nocturnalbar://reactivate?token={token}"
+    html = _build_html_generic(
+        "Welcome Back", 
+        "You requested to reactivate your account.", 
+        "Tap the button to regain full access to your account.",
+        "REACTIVATE ACCOUNT", link, True
+    )
+    _enviar_email(email_destino, "Reactivate Your Account", "Reactivate account.", html, "ACCOUNT_REACTIVATE")
+
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+
+def _enviar_email(email_destino: str, subject: str, texto_plain: str, html_body: str, log_tag: str) -> None:
+    if not _email_configurado():
+        logger.warning(f"[{log_tag}] SMTP no configurado - email no enviado a {email_destino}. Configura SMTP_HOST / SMTP_USER / SMTP_PASSWORD en .env para habilitar envíos.")
+        raise HTTPException(status_code=503, detail="El servicio de correos no está configurado. Contacta al administrador.")
+
+    logo_bytes = _load_logo_bytes()
+    has_logo = logo_bytes is not None
+
+    msg = MIMEMultipart("related")
+    msg["Subject"] = subject
+    msg["From"]    = f"Nocturnal Bar <{SMTP_FROM}>"
+    msg["To"]      = email_destino
+
+    alternative = MIMEMultipart("alternative")
+    msg.attach(alternative)
+    alternative.attach(MIMEText(texto_plain, "plain", "utf-8"))
+    alternative.attach(MIMEText(html_body, "html", "utf-8"))
+
+    if has_logo:
+        from email.mime.image import MIMEImage
+        img = MIMEImage(logo_bytes)
+        img.add_header("Content-ID", "<nocturnal_logo>")
+        msg.attach(img)
+
+    try:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as server:
+            server.starttls()
+            server.login(SMTP_USER, SMTP_PASSWORD)
+            server.send_message(msg)
+        logger.info(f"[{log_tag}] Email enviado a {email_destino}")
+    except Exception as e:
+        logger.error(f"[{log_tag}] Error enviando email: {e}")
+        raise HTTPException(status_code=503, detail="Error interno al enviar el correo. Intenta más tarde.")
