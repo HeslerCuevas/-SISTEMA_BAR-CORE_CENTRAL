@@ -45,8 +45,30 @@ BEGIN
         Telefono NVARCHAR(20) NULL,
         PasswordHash NVARCHAR(255) NOT NULL,
         FechaRegistro DATETIME NOT NULL DEFAULT GETDATE(),
+        EmailVerificado BIT NOT NULL DEFAULT 0,
         Activo BIT NOT NULL DEFAULT 1
     );
+END
+GO
+
+IF OBJECT_ID('dbo.Cliente_Otp_Codes', 'U') IS NULL
+BEGIN
+    CREATE TABLE Cliente_Otp_Codes (
+        Id INT IDENTITY(1,1) PRIMARY KEY,
+        CodigoHash NVARCHAR(255) NOT NULL,
+        ClienteId INT NOT NULL,
+        EmailDestino NVARCHAR(150) NOT NULL,
+        Proposito NVARCHAR(40) NOT NULL,
+        NuevoEmail NVARCHAR(150) NULL,
+        ExpiraEn DATETIME NOT NULL,
+        Usado BIT NOT NULL DEFAULT 0,
+        FechaCreacion DATETIME NOT NULL DEFAULT GETDATE(),
+        CONSTRAINT FK_ClienteOtpCodes_Clientes FOREIGN KEY (ClienteId) REFERENCES Clientes(Id)
+    );
+
+    CREATE INDEX IX_ClienteOtpCodes_CodigoHash ON Cliente_Otp_Codes (CodigoHash);
+    CREATE INDEX IX_ClienteOtpCodes_ClienteId ON Cliente_Otp_Codes (ClienteId);
+    CREATE INDEX IX_ClienteOtpCodes_Proposito ON Cliente_Otp_Codes (Proposito);
 END
 GO
 

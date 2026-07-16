@@ -9,12 +9,18 @@ Usa smtplib con configuración por variables de entorno.
 import os
 import base64
 import smtplib
+import ssl
+import time
 import logging
+from urllib.parse import quote
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.image import MIMEImage
 from pathlib import Path
 from fastapi import HTTPException
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 logger = logging.getLogger("EmailService")
 
@@ -22,8 +28,10 @@ SMTP_HOST     = os.getenv("SMTP_HOST", "")
 SMTP_PORT     = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USER     = os.getenv("SMTP_USER", "")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
-SMTP_FROM     = os.getenv("SMTP_FROM", "noreply@nocturnalbar.com")
+SMTP_FROM     = os.getenv("SMTP_FROM") or SMTP_USER or "noreply@nocturnalbar.com"
 FRONTEND_URL  = os.getenv("FRONTEND_URL", "http://localhost:3000")
+CORE_PUBLIC_URL = os.getenv("CORE_PUBLIC_URL", FRONTEND_URL)
+MOBILE_APP_SCHEME = os.getenv("MOBILE_APP_SCHEME", "nocturnalbar://")
 
 # Path to the bar logo (relative to this file's location, two levels up)
 _LOGO_PATH = Path(__file__).parent.parent.parent.parent / "LOGO_NORCTURAL_BAR.png"
@@ -309,8 +317,12 @@ def enviar_email_reset_password(email_destino: str, token: str, tipo: str = "emp
 
     # ── Build reset link ──────────────────────────────────────────────────────
     if tipo == "cliente":
-        # Opens the mobile app directly via custom URI scheme
-        reset_link = f"nocturnalbar://reset-password?token={token}"
+        # Use an HTTPS bridge page first because many email clients block
+        # direct custom-scheme CTA buttons inside HTML emails.
+        reset_link = (
+            f"{CORE_PUBLIC_URL.rstrip('/')}/api/v1/clientes/auth/open-reset"
+            f"?token={quote(token)}"
+        )
         subject    = "Reset Your Nocturnal Bar Password 🔐"
     else:
         reset_link = f"{FRONTEND_URL}/admin/reset-password?token={token}"
@@ -379,24 +391,24 @@ This link expires in 30 minutes. If you did not make this request, please contac
             server.starttls()
             server.login(SMTP_USER, SMTP_PASSWORD)
             server.sendmail(SMTP_FROM, email_destino, msg.as_string())
-        logger.info(f"Email de reset ({tipo}) enviado exitosamente a {email_destino}")
+        logger.info(f"Password reset email ({tipo}) sent successfully to {email_destino}")
     except smtplib.SMTPAuthenticationError:
-        logger.error("Error de autenticación SMTP. Verifica SMTP_USER y SMTP_PASSWORD.")
+        logger.error("SMTP authentication error. Check SMTP_USER and SMTP_PASSWORD.")
         raise HTTPException(
             status_code=503,
-            detail="Error de configuración del servidor de correo. Contacta al administrador."
+            detail="Email server configuration error. Contact the administrator."
         )
     except smtplib.SMTPException as e:
-        logger.error(f"Error SMTP al enviar email: {e}")
+        logger.error(f"SMTP error sending email: {e}")
         raise HTTPException(
             status_code=503,
-            detail="No se pudo enviar el correo de recuperación. Intenta más tarde."
+        detail="The recovery email could not be sent. Please try again later."
         )
     except Exception as e:
-        logger.error(f"Error inesperado enviando email: {e}")
+        logger.error(f"Unexpected error sending email: {e}")
         raise HTTPException(
             status_code=503,
-            detail="Error interno al enviar el correo. Intenta más tarde."
+        detail="Internal error sending the email. Please try again later."
         )
 
 # ─── Missing Templates Restored ───────────────────────────────────────────────
@@ -442,6 +454,68 @@ def _build_html_generic(title: str, text1: str, text2: str, btn_text: str = None
               <p style="margin:0 0 16px 0;font-size:16px;line-height:1.6;color:#DFE2EF;">{text1}</p>
               <p style="margin:0 0 24px 0;font-size:15px;line-height:1.7;color:#B0B5C5;">{text2}</p>
               {btn_html}
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+"""
+
+
+def _build_html_code_email(
+    title: str,
+    intro: str,
+    detail: str,
+    code: str,
+    has_logo: bool = True,
+) -> str:
+    logo_block = """<img src="cid:nocturnal_logo" alt="Nocturnal Bar" style="max-width:160px; height:auto; display:block; margin:0 auto 24px auto;" />""" if has_logo else ""
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /></head>
+<body style="margin:0;padding:0;background-color:#0F131C;font-family:'Segoe UI',Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#0F131C;padding:40px 16px;">
+    <tr>
+      <td align="center">
+        <table width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background-color:#1C1F29;border-radius:24px;border:1px solid #31353F;overflow:hidden;">
+          <tr>
+            <td style="background:linear-gradient(135deg,#FF6B00 0%,#A04100 100%);padding:32px;text-align:center;">
+              {logo_block}
+              <p style="margin:0;font-size:11px;font-weight:700;letter-spacing:5px;color:rgba(255,255,255,0.65);text-transform:uppercase;">NOCTURNAL BAR</p>
+              <h1 style="margin:10px 0 0 0;font-size:26px;font-weight:900;color:#FFFFFF;letter-spacing:1px;">{title}</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:36px;">
+              <p style="margin:0 0 14px 0;font-size:16px;line-height:1.6;color:#DFE2EF;">{intro}</p>
+              <p style="margin:0 0 24px 0;font-size:15px;line-height:1.7;color:#B0B5C5;">{detail}</p>
+              <div style="margin:0 auto 24px auto;max-width:260px;background:#141822;border:1px solid #3A3F4A;border-radius:18px;padding:20px 18px;text-align:center;">
+                <p style="margin:0 0 10px 0;font-size:11px;font-weight:800;letter-spacing:3px;color:#FFB693;text-transform:uppercase;">Your Code</p>
+                <div style="font-size:34px;font-weight:900;letter-spacing:10px;color:#FFFFFF;font-family:'Courier New',monospace;">{code}</div>
+                <p style="margin:12px 0 0 0;font-size:12px;line-height:1.5;color:#9CA3AF;">Tap and hold to copy, then paste it into the app.</p>
+              </div>
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="background:#181B25;border:1px solid #31353F;border-radius:14px;padding:14px 16px;">
+                    <p style="margin:0;font-size:13px;line-height:1.6;color:#B0B5C5;">
+                      This code expires in <strong style="color:#FFB693;">30 minutes</strong>.
+                      If you did not request this, you can safely ignore this email.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="background-color:#181B25;padding:20px 36px;border-top:1px solid #31353F;">
+              <p style="margin:0;font-size:11px;color:#6B7280;text-align:center;line-height:1.6;">
+                © Nocturnal Bar &amp; Lounge<br />
+                This is an automated message. Please do not reply.
+              </p>
             </td>
           </tr>
         </table>
@@ -501,13 +575,81 @@ def enviar_email_reactivacion(email_destino: str, token: str) -> None:
     )
     _enviar_email(email_destino, "Reactivate Your Account", "Reactivate account.", html, "ACCOUNT_REACTIVATE")
 
+
+def enviar_email_codigo_verificacion(email_destino: str, codigo: str) -> None:
+    html = _build_html_code_email(
+        "Verify Your Email",
+        "Your Nocturnal account is almost ready.",
+        "Enter this 6-digit code in the app to verify your email and unlock full account protection.",
+        codigo,
+        True,
+    )
+    _enviar_email(
+        email_destino,
+        "Verify your Nocturnal email",
+        f"Your verification code is: {codigo}",
+        html,
+        "EMAIL_VERIFY_OTP",
+    )
+
+
+def enviar_email_codigo_reset(email_destino: str, codigo: str) -> None:
+    html = _build_html_code_email(
+        "Reset Your Password",
+        "We received a password reset request for your Nocturnal account.",
+        "Enter this 6-digit code in the app to choose a new password.",
+        codigo,
+        True,
+    )
+    _enviar_email(
+        email_destino,
+        "Your Nocturnal password reset code",
+        f"Your password reset code is: {codigo}",
+        html,
+        "PASSWORD_RESET_OTP",
+    )
+
+
+def enviar_email_codigo_cambio_email_actual(email_destino: str, nuevo_email: str, codigo: str) -> None:
+    html = _build_html_code_email(
+        "Authorize Email Change",
+        f"We received a request to change your Nocturnal email to {nuevo_email}.",
+        "Enter this 6-digit code from your current email in the app to approve the change.",
+        codigo,
+        True,
+    )
+    _enviar_email(
+        email_destino,
+        "Authorize your Nocturnal email change",
+        f"Your authorization code is: {codigo}",
+        html,
+        "EMAIL_CHANGE_OLD_OTP",
+    )
+
+
+def enviar_email_codigo_cambio_email_nuevo(email_destino: str, codigo: str) -> None:
+    html = _build_html_code_email(
+        "Verify New Email",
+        "This email address was entered for a Nocturnal account change.",
+        "Enter this 6-digit code in the app to confirm you can access this new email.",
+        codigo,
+        True,
+    )
+    _enviar_email(
+        email_destino,
+        "Verify your new Nocturnal email",
+        f"Your verification code is: {codigo}",
+        html,
+        "EMAIL_CHANGE_NEW_OTP",
+    )
+
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 def _enviar_email(email_destino: str, subject: str, texto_plain: str, html_body: str, log_tag: str) -> None:
     if not _email_configurado():
-        logger.warning(f"[{log_tag}] SMTP no configurado - email no enviado a {email_destino}. Configura SMTP_HOST / SMTP_USER / SMTP_PASSWORD en .env para habilitar envíos.")
-        raise HTTPException(status_code=503, detail="El servicio de correos no está configurado. Contacta al administrador.")
+        logger.warning(f"[{log_tag}] SMTP is not configured - email not sent to {email_destino}. Configure SMTP_HOST / SMTP_USER / SMTP_PASSWORD in .env to enable sending.")
+        raise HTTPException(status_code=503, detail="The email service is not configured. Contact the administrator.")
 
     logo_bytes = _load_logo_bytes()
     has_logo = logo_bytes is not None
@@ -528,12 +670,49 @@ def _enviar_email(email_destino: str, subject: str, texto_plain: str, html_body:
         img.add_header("Content-ID", "<nocturnal_logo>")
         msg.attach(img)
 
-    try:
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as server:
-            server.starttls()
-            server.login(SMTP_USER, SMTP_PASSWORD)
-            server.send_message(msg)
-        logger.info(f"[{log_tag}] Email enviado a {email_destino}")
-    except Exception as e:
-        logger.error(f"[{log_tag}] Error enviando email: {e}")
-        raise HTTPException(status_code=503, detail="Error interno al enviar el correo. Intenta más tarde.")
+    last_error: Exception | None = None
+    for attempt in range(2):
+        message_sent = False
+        try:
+            if SMTP_PORT == 465:
+                server = smtplib.SMTP_SSL(
+                    SMTP_HOST,
+                    SMTP_PORT,
+                    timeout=15,
+                    context=ssl.create_default_context(),
+                )
+            else:
+                server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15)
+
+            with server:
+                server.ehlo()
+                if SMTP_PORT != 465:
+                    server.starttls(context=ssl.create_default_context())
+                    server.ehlo()
+                server.login(SMTP_USER, SMTP_PASSWORD)
+                server.sendmail(SMTP_FROM, [email_destino], msg.as_string())
+                message_sent = True
+            logger.info(f"[{log_tag}] Email enviado a {email_destino}")
+            return
+        except smtplib.SMTPAuthenticationError:
+            raise HTTPException(
+                status_code=503,
+                detail="The email service could not authenticate. Please contact support.",
+            )
+        except (smtplib.SMTPException, OSError) as error:
+            if message_sent:
+                # The SMTP server may close immediately after accepting DATA;
+                # do not resend and risk a duplicate OTP in that case.
+                logger.info(f"[{log_tag}] Email accepted by SMTP server")
+                return
+            last_error = error
+            if attempt == 0:
+                time.sleep(0.5)
+
+    logger.error(f"[{log_tag}] Error sending email after retry: {last_error}")
+    raise HTTPException(
+        status_code=503,
+        detail="The email service is temporarily unavailable. Please try again shortly.",
+    )
+    if False:
+        raise HTTPException(status_code=503, detail="Internal error sending the email. Please try again later.")

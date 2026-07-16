@@ -56,26 +56,26 @@ def validar_codigo_promocional(
     )
     codigo_obj = db.exec(stmt).first()
     if not codigo_obj:
-        raise HTTPException(status_code=404, detail="Código promocional no encontrado o inactivo.")
+        raise HTTPException(status_code=404, detail="Promotional code not found or inactive.")
 
     if codigo_obj.fecha_fin and codigo_obj.fecha_fin < ahora:
-        raise HTTPException(status_code=400, detail="El código promocional ha expirado.")
+        raise HTTPException(status_code=400, detail="The promotional code has expired.")
     if codigo_obj.fecha_inicio > ahora:
-        raise HTTPException(status_code=400, detail="El código promocional aún no está vigente.")
+        raise HTTPException(status_code=400, detail="The promotional code is not active yet.")
     if codigo_obj.uso_maximo is not None and codigo_obj.usos_actuales >= codigo_obj.uso_maximo:
-        raise HTTPException(status_code=400, detail="El código promocional ha alcanzado su límite de usos.")
+        raise HTTPException(status_code=400, detail="The promotional code has reached its usage limit.")
     if codigo_obj.cliente_especifico_id is not None:
         if cliente_id is None or codigo_obj.cliente_especifico_id != cliente_id:
-            raise HTTPException(status_code=403, detail="Este código es exclusivo para un cliente específico.")
+            raise HTTPException(status_code=403, detail="This code is exclusive to a specific customer.")
     if codigo_obj.monto_minimo_compra is not None and subtotal < codigo_obj.monto_minimo_compra:
         raise HTTPException(
             status_code=400,
-            detail=f"El monto mínimo de compra para este código es $ {float(codigo_obj.monto_minimo_compra):,.2f}."
+            detail=f"The minimum purchase amount for this code is $ {float(codigo_obj.monto_minimo_compra):,.2f}."
         )
 
     promo = db.get(Promocion, codigo_obj.promocion_id)
     if not promo or not _promocion_vigente(promo, ahora):
-        raise HTTPException(status_code=400, detail="La promoción asociada a este código no está vigente.")
+        raise HTTPException(status_code=400, detail="The promotion associated with this code is not active.")
 
     return {
         "valido": True,

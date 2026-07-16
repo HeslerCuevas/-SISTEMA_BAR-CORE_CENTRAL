@@ -36,7 +36,7 @@ def crear_rol(
 
     existente = db.exec(select(Rol).where(Rol.nombre == payload.nombre)).first()
     if existente:
-        raise HTTPException(status_code=400, detail=f"Ya existe un rol con el nombre '{payload.nombre}'.")
+        raise HTTPException(status_code=400, detail=f"A role already exists with the name '{payload.nombre}'.")
 
     rol = Rol(nombre=payload.nombre)
     db.add(rol)
@@ -46,7 +46,7 @@ def crear_rol(
     log_auditoria(
         nivel="INFO",
         origen="POST /api/v1/roles",
-        mensaje=f"Rol creado: '{rol.nombre}' (id={rol.id})",
+        mensaje=f"Role created: '{rol.nombre}' (id={rol.id})",
     )
     return rol
 
@@ -68,7 +68,7 @@ def actualizar_rol(
         select(Rol).where(Rol.nombre == payload.nombre)
     ).first()
     if existente and existente.id != rol_id:
-        raise HTTPException(status_code=400, detail=f"Ya existe un rol con el nombre '{payload.nombre}'.")
+        raise HTTPException(status_code=400, detail=f"A role already exists with the name '{payload.nombre}'.")
 
     nombre_anterior = rol.nombre
     rol.nombre = payload.nombre
@@ -79,6 +79,6 @@ def actualizar_rol(
     log_auditoria(
         nivel="INFO",
         origen=f"PUT /api/v1/roles/{rol_id}",
-        mensaje=f"Rol actualizado: '{nombre_anterior}' -> '{rol.nombre}'",
+        mensaje=f"Role updated: '{nombre_anterior}' -> '{rol.nombre}'",
     )
     return rol

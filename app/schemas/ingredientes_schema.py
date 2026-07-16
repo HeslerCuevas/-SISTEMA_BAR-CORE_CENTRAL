@@ -4,7 +4,7 @@ Pydantic schemas for the Ingredient Inventory System.
 Covers:
     - Ingredient categories (CategoriaIngrediente)
     - Ingredients (Ingrediente)
-    - Product recipes / BOM (RecetaProducto + ComponenteReceta)
+    - Product recipes / BOM (RecetaProduct + ComponenteReceta)
     - Ingredient movements (MovimientoIngrediente)
     - Availability and reporting
 """

@@ -28,13 +28,13 @@ class SalesManager:
         if not pedido:
             raise HTTPException(
                 status_code=404,
-                detail=f"Pedido #{pedido_id} no encontrado en el CORE.",
+                detail=f"Order #{pedido_id} not found in the CORE.",
             )
 
         if pedido.estado in ["FACTURADO", "CANCELADO"]:
             raise HTTPException(
                 status_code=400,
-                detail=f"Operación inválida. El pedido actualmente está en estado {pedido.estado}.",
+                detail=f"Invalid operation. The order is currently in state {pedido.estado}.",
             )
 
         pedido.estado = "FACTURADO"
@@ -66,11 +66,11 @@ class SalesManager:
         """
         pedido = session.get(PedidoGlobal, pedido_id)
         if not pedido:
-            raise HTTPException(status_code=404, detail="Pedido no encontrado.")
+            raise HTTPException(status_code=404, detail="Order not found.")
 
         if pedido.estado == "CANCELADO":
             raise HTTPException(
-                status_code=400, detail="El pedido ya fue cancelado previamente."
+                status_code=400, detail="The order ya fue cancelado previamente."
             )
 
         # ── Reverse ingredient-based stock (all CONSUMO_VENTA for this order) ──
@@ -99,7 +99,7 @@ class SalesManager:
                     cantidad=item.cantidad,
                     tipo="ENTRADA",
                     motivo=(
-                        f"Reversión por Cancelación Pedido #{pedido_id}. "
+                        f"Reversión por Cancelación Order #{pedido_id}. "
                         f"Motivo: {motivo}"
                     ),
                     empleado_id=empleado_id,

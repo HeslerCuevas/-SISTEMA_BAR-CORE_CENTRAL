@@ -76,7 +76,7 @@ def vincular_mesa(request: MesaVincularRequest, session: Session = Depends(get_s
         )
     else:
         return MesaVincularResponse(
-            mensaje="Mesa libre. Listo para pedir.",
+            mensaje="Table available. Ready to order.",
             estado_mesa="LIBRE",
             numero_mesa=mesa.numero,
             factura_local_uuid_activa=None
@@ -93,10 +93,10 @@ def llamar_mesero(request: LlamarMeseroRequest, session: Session = Depends(get_s
     if not mesa:
         raise HTTPException(status_code=404, detail="Código QR inválido o mesa inactiva.")
 
-    logger.info(f"ALERTA OPERATIVA: Mesa {mesa.numero} solicita '{request.motivo_llamada}'")
+    logger.info(f"ALERTA OPERATIVA: Mesa {mesa.numero} requests '{request.motivo_llamada}'")
 
     return LlamarMeseroResponse(
-        mensaje=f"Notificación de '{request.motivo_llamada}' enviada a la caja para la Mesa {mesa.numero}."
+        mensaje=f"Notificación de '{request.motivo_llamada}' sent to the cash register for Table {mesa.numero}."
     )
 
 
@@ -168,7 +168,7 @@ def crear_mesa(
     log_auditoria(
         nivel="INFO",
         origen="POST /api/v1/mesas/admin",
-        mensaje=f"Mesa creada y QR generado ({ruta_imagen}): número={mesa.numero}, id={mesa.id}",
+        mensaje=f"Table created and QR generated ({ruta_imagen}): número={mesa.numero}, id={mesa.id}",
     )
     return mesa
 
@@ -206,7 +206,7 @@ def actualizar_mesa(
     log_auditoria(
         nivel="INFO",
         origen="PUT /api/v1/mesas/admin",
-        mensaje=f"Mesa modificada: id={mesa_id}, número={mesa.numero}",
+        mensaje=f"Table updated: id={mesa_id}, número={mesa.numero}",
         data=datos
     )
     return mesa
@@ -224,7 +224,7 @@ def desactivar_mesa(
     if not mesa:
         raise HTTPException(status_code=404, detail="Mesa no encontrada.")
     if not mesa.activo:
-        raise HTTPException(status_code=400, detail="La mesa ya está inactiva.")
+        raise HTTPException(status_code=400, detail="Table ya está inactiva.")
 
     mesa.activo = False
     db.add(mesa)
@@ -235,4 +235,4 @@ def desactivar_mesa(
         origen="DELETE /api/v1/mesas/admin",
         mensaje=f"Mesa desactivada: número={mesa.numero}, id={mesa_id}"
     )
-    return {"mensaje": f"Mesa {mesa.numero} desactivada exitosamente.", "id": mesa_id}
+    return {"mensaje": f"Mesa {mesa.numero} deactivated successfully.", "id": mesa_id}

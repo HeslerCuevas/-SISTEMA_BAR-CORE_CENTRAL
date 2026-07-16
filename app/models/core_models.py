@@ -40,6 +40,7 @@ class Cliente(SQLModel, table=True):
     telefono: Optional[str] = Field(default=None, sa_column=Column("Telefono", String(20)))
     password_hash: str = Field(sa_column=Column("PasswordHash", String(255), nullable=False))
     fecha_registro: datetime = Field(sa_column=Column("FechaRegistro", DateTime, server_default=text("GETDATE()")))
+    email_verificado: bool = Field(sa_column=Column("EmailVerificado", Boolean, nullable=False, server_default=text("0")))
     activo: bool = Field(sa_column=Column("Activo", Boolean, server_default=text("1")))
 
 
@@ -259,6 +260,19 @@ class PasswordResetToken(SQLModel, table=True):
     # EMPLEADO | CLIENTE
     entidad_tipo: str = Field(sa_column=Column("EntidadTipo", String(20), nullable=False))
     entidad_id: int = Field(sa_column=Column("EntidadId", Integer, nullable=False))
+    expira_en: datetime = Field(sa_column=Column("ExpiraEn", DateTime, nullable=False))
+    usado: bool = Field(default=False, sa_column=Column("Usado", Boolean, server_default=text("0")))
+    fecha_creacion: datetime = Field(sa_column=Column("FechaCreacion", DateTime, server_default=text("GETDATE()")))
+
+
+class ClienteOtpCode(SQLModel, table=True):
+    __tablename__ = "Cliente_Otp_Codes"
+    id: Optional[int] = Field(default=None, sa_column=Column("Id", Integer, primary_key=True))
+    codigo_hash: str = Field(sa_column=Column("CodigoHash", String(255), nullable=False, index=True))
+    cliente_id: int = Field(sa_column=Column("ClienteId", Integer, ForeignKey("Clientes.Id"), nullable=False, index=True))
+    email_destino: str = Field(sa_column=Column("EmailDestino", String(150), nullable=False))
+    proposito: str = Field(sa_column=Column("Proposito", String(40), nullable=False, index=True))
+    nuevo_email: Optional[str] = Field(default=None, sa_column=Column("NuevoEmail", String(150), nullable=True))
     expira_en: datetime = Field(sa_column=Column("ExpiraEn", DateTime, nullable=False))
     usado: bool = Field(default=False, sa_column=Column("Usado", Boolean, server_default=text("0")))
     fecha_creacion: datetime = Field(sa_column=Column("FechaCreacion", DateTime, server_default=text("GETDATE()")))

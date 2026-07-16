@@ -217,3 +217,12 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
             
     terminalreporter.write_line("")
 
+
+# --- Mock email sending for tests ---
+from unittest.mock import patch
+
+@pytest.fixture(scope="function", autouse=True)
+def mock_enviar_email():
+    with patch("app.services.email_service._enviar_email", return_value=None), \
+         patch("app.services.email_service.enviar_email_reset_password", return_value=None):
+        yield

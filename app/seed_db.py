@@ -5,7 +5,7 @@ from app.core.security import get_password_hash
 
 def seed_bar_data():
     with Session(engine) as session:
-        print("--- Poblando tablas originales del Bar ---")
+        print("--- Populating the bar's original tables ---")
 
         statement_sucursal = select(Sucursal).where(Sucursal.nombre == "Casa Matriz")
         db_sucursal = session.exec(statement_sucursal).first()
@@ -19,9 +19,9 @@ def seed_bar_data():
             session.add(db_sucursal)
             session.commit()
             session.refresh(db_sucursal)
-            print(f"Sucursal 'Casa Matriz' creada.")
+            print(f"Branch 'Casa Matriz' creada.")
         else:
-            print("La Sucursal 'Casa Matriz' ya existe.")
+            print("La Branch 'Casa Matriz' ya existe.")
 
         statement_rol = select(Rol).where(Rol.nombre == "ADMIN")
         db_rol = session.exec(statement_rol).first()
@@ -51,12 +51,12 @@ def seed_bar_data():
             session.add(nuevo_admin)
             try:
                 session.commit()
-                print(f"Empleado '{nuevo_admin.nombre_completo}' creado exitosamente.")
+                print(f"Employee '{nuevo_admin.nombre_completo}' created successfully.")
             except Exception as e:
                 session.rollback()
-                print(f"Error al crear el empleado: {e}")
+                print(f"Error creating the employee: {e}")
         else:
-            print(f"El empleado administrador ya existe.")
+            print(f"The administrator employee already exists.")
 
 if __name__ == "__main__":
     seed_bar_data()

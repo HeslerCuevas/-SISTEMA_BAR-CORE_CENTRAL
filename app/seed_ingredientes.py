@@ -10,7 +10,7 @@ Este script ejecuta:
   3. Registro de Impuestos (ITBIS).
   4. Registro de Categorías de Productos.
   5. Registro de Productos (incluyendo SKU, Nombre, Descripción, Precio,
-     EsInventariable, Activo e ImagenURL).
+     EsInventariable, Active e ImagenURL).
   6. Inicialización del Inventario de Productos (Legacy/Unidad).
   7. Registro de Categorías de Ingredientes e Ingredientes.
   8. Registro de Recetas y sus Componentes.
@@ -71,7 +71,7 @@ CATEGORIAS = [
     (5, "Sin Alcohol")
 ]
 
-# (Id, CategoriaId, ImpuestoId, SKU, Nombre, Descripcion, PrecioBase, TipoControlInventario, Activo, ImagenURL)
+# (Id, CategoriaId, ImpuestoId, SKU, Nombre, Descripcion, PrecioBase, TipoControlInventario, Active, ImagenURL)
 PRODUCTOS = [
     (1, 1, 1, 'B-01', 'Presidente Light', 'Bien fría, 12oz.', 195.00, 'PRODUCTO', 1, 'https://images.unsplash.com/photo-1535958636474-b021ee887b13?q=80&w=600&auto=format&fit=crop'),
     (2, 2, 1, 'COCK-01', 'Margarita Clásica', 'Tequila, triple sec y limón.', 350.00, 'INGREDIENTES', 1, 'https://images.unsplash.com/photo-1536935338788-846bb9981813?q=80&w=400&auto=format&fit=crop'),
@@ -242,7 +242,7 @@ def seed_database():
         cursor.execute("SET IDENTITY_INSERT [dbo].[Impuestos] ON")
         for imp_id, nombre, tasa, activo in IMPUESTOS:
             cursor.execute(
-                "INSERT INTO [dbo].[Impuestos] (Id, Nombre, TasaPorcentaje, Activo) VALUES (?, ?, ?, ?)",
+                "INSERT INTO [dbo].[Impuestos] (Id, Nombre, TasaPorcentaje, Active) VALUES (?, ?, ?, ?)",
                 imp_id, nombre, tasa, activo
             )
             print(f"      ✓ Impuesto [{imp_id}] {nombre} ({tasa}%)")
@@ -255,7 +255,7 @@ def seed_database():
         cursor.execute("SET IDENTITY_INSERT [dbo].[Categorias] ON")
         for cat_id, nombre in CATEGORIAS:
             cursor.execute(
-                "INSERT INTO [dbo].[Categorias] (Id, Nombre, Activo) VALUES (?, ?, 1)",
+                "INSERT INTO [dbo].[Categorias] (Id, Nombre, Active) VALUES (?, ?, 1)",
                 cat_id, nombre
             )
             print(f"      ✓ Categoría [{cat_id}] {nombre}")
@@ -271,12 +271,12 @@ def seed_database():
                 """
                 INSERT INTO [dbo].[Productos] 
                     (Id, CategoriaId, ImpuestoId, SKU, Nombre, Descripcion, 
-                     PrecioBase, TipoControlInventario, Activo, ImagenURL)
+                     PrecioBase, TipoControlInventario, Active, ImagenURL)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9]
             )
-            print(f"      ✓ Producto [{row[0]}] '{row[4]}' | SKU: {row[3]} | URL: {row[9][:45]}...")
+            print(f"      ✓ Product [{row[0]}] '{row[4]}' | SKU: {row[3]} | URL: {row[9][:45]}...")
         cursor.execute("SET IDENTITY_INSERT [dbo].[Productos] OFF")
 
         # -------------------------------------------------------------------
@@ -308,7 +308,7 @@ def seed_database():
         cursor.execute("SET IDENTITY_INSERT [dbo].[Categorias_Ingredientes] ON")
         for cat_id, nombre, desc in CATEGORIAS_INGREDIENTES:
             cursor.execute(
-                "INSERT INTO [dbo].[Categorias_Ingredientes] (Id, Nombre, Descripcion, Activo) VALUES (?, ?, ?, 1)",
+                "INSERT INTO [dbo].[Categorias_Ingredientes] (Id, Nombre, Descripcion, Active) VALUES (?, ?, ?, 1)",
                 cat_id, nombre, desc
             )
         cursor.execute("SET IDENTITY_INSERT [dbo].[Categorias_Ingredientes] OFF")
@@ -320,7 +320,7 @@ def seed_database():
                 """
                 INSERT INTO [dbo].[Ingredientes]
                     (Id, CategoriaId, Nombre, Descripcion, UnidadMedida,
-                     CantidadActual, CantidadMinima, CantidadReorden, CostoUnitario, Activo)
+                     CantidadActual, CantidadMinima, CantidadReorden, CostoUnitario, Active)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
                 """,
                 row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8]
@@ -334,7 +334,7 @@ def seed_database():
         print("\n[8/9] Registrando Recetas y sus Componentes...")
         for prod_id, desc in RECETAS:
             cursor.execute(
-                "INSERT INTO [dbo].[Recetas_Producto] (ProductoId, Descripcion, Activo) VALUES (?, ?, 1)",
+                "INSERT INTO [dbo].[Recetas_Producto] (ProductoId, Descripcion, Active) VALUES (?, ?, 1)",
                 prod_id, desc
             )
         

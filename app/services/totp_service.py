@@ -61,16 +61,16 @@ def enrolar_supervisor(db: Session, empleado_id: int) -> dict:
     """
     empleado = db.get(Empleado, empleado_id)
     if not empleado:
-        raise HTTPException(status_code=404, detail="Empleado no encontrado.")
+        raise HTTPException(status_code=404, detail="Employee not found.")
     if not empleado.activo:
-        raise HTTPException(status_code=400, detail="El empleado está inactivo.")
+        raise HTTPException(status_code=400, detail="The employee is inactive.")
 
     # Check allowed roles — only GERENTE / ADMIN may have TOTP
     from sqlmodel import select as sel
     from app.models.core_models import Rol
     rol = db.get(Rol, empleado.rol_id)
     if not rol or rol.nombre not in ("ADMIN", "GERENTE", "SUPERVISOR"):
-        raise HTTPException(status_code=403, detail="Solo supervisores/gerentes pueden ser enrolados.")
+        raise HTTPException(status_code=403, detail="Only supervisors/managers can be enrolled.")
 
     secret = generar_secreto_totp()
     encrypted = _encrypt_secret(secret)
@@ -110,26 +110,26 @@ def verificar_supervisor_totp(
     stmt = sel(Empleado).where(Empleado.email == email_supervisor.strip())
     supervisor = db.exec(stmt).first()
     if not supervisor or not supervisor.activo:
-        raise HTTPException(status_code=401, detail="Supervisor no encontrado o inactivo.")
+        raise HTTPException(status_code=401, detail="Supervisor not found or inactive.")
 
     rol = db.get(Rol, supervisor.rol_id)
     if not rol or rol.nombre not in ("ADMIN", "GERENTE", "SUPERVISOR"):
-        raise HTTPException(status_code=403, detail="El empleado no tiene permisos de supervisor.")
+        raise HTTPException(status_code=403, detail="The employee does not have supervisor permissions.")
 
     totp_record = db.exec(select(EmpleadoTOTP).where(
         EmpleadoTOTP.empleado_id == supervisor.id,
         EmpleadoTOTP.activo == True
     )).first()
     if not totp_record:
-        raise HTTPException(status_code=403, detail="El supervisor no tiene TOTP configurado. Contacte al administrador.")
+        raise HTTPException(status_code=403, detail="The supervisor does not have TOTP configured. Contact the administrator.")
 
     try:
         secret = _decrypt_secret(totp_record.secreto_encriptado)
     except Exception:
-        raise HTTPException(status_code=401, detail="La llave TOTP del servidor cambió. El supervisor debe volver a enrolarse.")
+        raise HTTPException(status_code=401, detail="The server's TOTP key changed. The supervisor must enroll again.")
     
     if not verificar_otp(secret, otp.strip()):
-        raise HTTPException(status_code=401, detail="Código OTP incorrecto o expirado.")
+        raise HTTPException(status_code=401, detail="Incorrect or expired OTP code.")
 
     # Record last usage
     totp_record.ultimo_uso_otp = get_local_now()

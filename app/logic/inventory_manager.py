@@ -20,7 +20,7 @@ class InventoryManager:
     ) -> InventarioActual:
 
         if cantidad < 0:
-            raise HTTPException(status_code=400, detail="La cantidad del movimiento no puede ser negativa.")
+            raise HTTPException(status_code=400, detail="Movement quantity cannot be negative.")
 
         if movimiento_local_uuid:
             movimiento_previo = session.exec(
@@ -40,7 +40,7 @@ class InventoryManager:
             session.flush()
 
         if tipo == 'SALIDA' and stock.cantidad_disponible < cantidad:
-            raise HTTPException(status_code=400, detail=f"Stock insuficiente. Disponible: {stock.cantidad_disponible}")
+            raise HTTPException(status_code=400, detail=f"Insufficient stock. Available: {stock.cantidad_disponible}")
 
         cantidad_a_registrar = cantidad
 
