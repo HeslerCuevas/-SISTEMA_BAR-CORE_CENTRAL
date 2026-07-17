@@ -1,17 +1,30 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials
+from fastapi.responses import HTMLResponse
 from sqlmodel import Session, select
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 import hashlib
 import secrets
+from html import escape
 
 from app.db.database import get_session
-from app.models.core_models import PasswordResetToken
+from app.models.core_models import PasswordResetToken, EmailChangeToken, AccountActionToken, ClienteOtpCode
 from app.core.timezone import get_local_now
 from app.core.security import decode_access_token, security_bearer
 from app.services.audit_service import log_auditoria
-from app.services.email_service import enviar_email_reset_password
+from app.services.email_service import (
+    enviar_email_reset_password,
+    enviar_email_cambio_password_notificacion,
+    enviar_email_confirmacion_cambio_email_viejo,
+    enviar_email_verificacion_nuevo_email,
+    enviar_email_codigo_verificacion,
+    enviar_email_codigo_reset,
+    enviar_email_codigo_cambio_email_actual,
+    enviar_email_codigo_cambio_email_nuevo,
+    enviar_email_solicitud_eliminacion,
+    enviar_email_reactivacion,
+)
 from app.models.core_models import Cliente
 from app.core.security import verify_password, get_password_hash, create_access_token
 
@@ -23,12 +36,103 @@ from app.schemas.auth_schema import (
     CambioPasswordClienteRequest,
     SolicitarResetRequest,
     ConfirmarResetRequest,
+    SolicitarOtpEmailRequest,
+    ConfirmarResetOtpRequest,
+    VerificarEmailOtpRequest,
     PasswordResetResponse,
+    ActualizarPerfilRequest,
+    ActualizarPerfilResponse,
+    SolicitarCambioEmailRequest,
+    ConfirmarCambioEmailOtpRequest,
+    SolicitarEliminacionRequest,
+    SolicitarReactivacionRequest,
 )
 
 router = APIRouter(prefix="/api/v1/clientes/auth", tags=["Seguridad - Clientes Móvil"])
 
 TOKEN_RESET_EXPIRACION_MINUTOS = 30
+TOKEN_EMAIL_CHANGE_HORAS    = 24
+TOKEN_ACCOUNT_ACTION_HORAS  = 48
+TOKEN_PW_RECOVERY_HORAS     = 24
+MOBILE_APP_SCHEME = "nocturnalbar://"
+OTP_EXPIRACION_MINUTOS = 30
+
+
+def _hash_codigo(codigo: str) -> str:
+    return hashlib.sha256(codigo.encode()).hexdigest()
+
+
+def _generar_codigo_otp() -> str:
+    return f"{secrets.randbelow(1_000_000):06d}"
+
+
+def _invalidar_otps(session: Session, cliente_id: int, proposito: str):
+    otps = session.exec(
+        select(ClienteOtpCode).where(
+            ClienteOtpCode.cliente_id == cliente_id,
+            ClienteOtpCode.proposito == proposito,
+            ClienteOtpCode.usado == False,
+        )
+    ).all()
+    for otp in otps:
+        otp.usado = True
+        session.add(otp)
+
+
+def _crear_otp_cliente(
+    session: Session,
+    *,
+    cliente_id: int,
+    email_destino: str,
+    proposito: str,
+    nuevo_email: Optional[str] = None,
+) -> str:
+    _invalidar_otps(session, cliente_id, proposito)
+    codigo = _generar_codigo_otp()
+    session.add(
+        ClienteOtpCode(
+            codigo_hash=_hash_codigo(codigo),
+            cliente_id=cliente_id,
+            email_destino=email_destino,
+            proposito=proposito,
+            nuevo_email=nuevo_email,
+            expira_en=get_local_now() + timedelta(minutes=OTP_EXPIRACION_MINUTOS),
+            usado=False,
+        )
+    )
+    return codigo
+
+
+def _obtener_otp_valido(
+    session: Session,
+    *,
+    cliente_id: int,
+    proposito: str,
+    codigo: str,
+    nuevo_email: Optional[str] = None,
+) -> ClienteOtpCode:
+    otp = session.exec(
+        select(ClienteOtpCode).where(
+            ClienteOtpCode.cliente_id == cliente_id,
+            ClienteOtpCode.proposito == proposito,
+            ClienteOtpCode.codigo_hash == _hash_codigo(codigo),
+            ClienteOtpCode.usado == False,
+        )
+    ).first()
+
+    if not otp:
+        raise HTTPException(status_code=400, detail="El codigo es invalido o ya fue utilizado.")
+
+    if nuevo_email is not None and (otp.nuevo_email or "").strip().lower() != nuevo_email.strip().lower():
+        raise HTTPException(status_code=400, detail="El codigo no corresponde al cambio de email activo.")
+
+    if otp.expira_en < get_local_now():
+        otp.usado = True
+        session.add(otp)
+        session.commit()
+        raise HTTPException(status_code=400, detail="El codigo ha expirado. Solicita uno nuevo.")
+
+    return otp
 
 
 # ─── Registro ──────────────────────────────────────────────────────────────────
@@ -52,6 +156,7 @@ def registrar_cliente(
         telefono=request.telefono,
         password_hash=hashed_password,
         fecha_registro=datetime.utcnow(),
+        email_verificado=False,
         activo=True
     )
     session.add(nuevo_cliente)
@@ -61,7 +166,8 @@ def registrar_cliente(
     return ClienteRegistroResponse(
         mensaje="Cuenta de cliente creada exitosamente.",
         cliente_id=nuevo_cliente.id,
-        email=nuevo_cliente.email
+        email=nuevo_cliente.email,
+        email_verificado=nuevo_cliente.email_verificado,
     )
 
 
@@ -83,7 +189,8 @@ def login_cliente(
     if not cliente.activo:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Esta cuenta ha sido desactivada."
+            # Distinguishable key so Integration / Flutter can trigger the reactivation flow
+            detail="CUENTA_INACTIVA: Esta cuenta ha sido desactivada. Solicita la reactivación desde la app."
         )
 
     access_token = create_access_token(subject=str(cliente.id), canal="MOVIL")
@@ -93,8 +200,80 @@ def login_cliente(
         token_type="bearer",
         canal="MOVIL",
         cliente_id=cliente.id,
-        nombre_completo=cliente.nombre_completo
+        nombre_completo=cliente.nombre_completo,
+        email=cliente.email,
+        email_verificado=cliente.email_verificado,
     )
+
+
+@router.post("/solicitar-verificacion-email", response_model=PasswordResetResponse)
+def solicitar_verificacion_email_cliente(
+    session: Session = Depends(get_session),
+    token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
+):
+    if not token_obj:
+        raise HTTPException(status_code=401, detail="Token de autenticacion requerido.")
+
+    t = decode_access_token(token_obj.credentials)
+    if not t:
+        raise HTTPException(status_code=401, detail="Token invalido o expirado.")
+
+    cliente = session.get(Cliente, int(t["sub"]))
+    if not cliente or not cliente.activo:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado o inactivo.")
+
+    if cliente.email_verificado:
+        return PasswordResetResponse(mensaje="Tu email ya esta verificado.")
+
+    codigo = _crear_otp_cliente(
+        session,
+        cliente_id=cliente.id,
+        email_destino=cliente.email,
+        proposito="EMAIL_VERIFY",
+    )
+    session.commit()
+    enviar_email_codigo_verificacion(cliente.email, codigo)
+
+    return PasswordResetResponse(mensaje="Te enviamos un codigo de verificacion a tu correo.")
+
+
+@router.post("/verificar-email", response_model=PasswordResetResponse)
+def verificar_email_cliente(
+    payload: VerificarEmailOtpRequest,
+    session: Session = Depends(get_session),
+    token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
+):
+    if not token_obj:
+        raise HTTPException(status_code=401, detail="Token de autenticacion requerido.")
+
+    t = decode_access_token(token_obj.credentials)
+    if not t:
+        raise HTTPException(status_code=401, detail="Token invalido o expirado.")
+
+    cliente = session.get(Cliente, int(t["sub"]))
+    if not cliente or not cliente.activo:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado o inactivo.")
+
+    otp = _obtener_otp_valido(
+        session,
+        cliente_id=cliente.id,
+        proposito="EMAIL_VERIFY",
+        codigo=payload.codigo,
+    )
+
+    otp.usado = True
+    cliente.email_verificado = True
+    session.add(otp)
+    session.add(cliente)
+    session.commit()
+
+    log_auditoria(
+        nivel="INFO",
+        origen="POST /api/v1/clientes/auth/verificar-email",
+        mensaje=f"Cliente id={cliente.id} verifico su email.",
+    )
+
+    return PasswordResetResponse(mensaje="Email verificado exitosamente.")
 
 
 @router.post("/cambiar-password", response_model=PasswordResetResponse)
@@ -103,10 +282,10 @@ def cambiar_password_cliente(
     session: Session = Depends(get_session),
     token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
 ):
-
+    """Authenticated password change. Sends a notification email with a 'wasn't me' recovery link."""
     if not token_obj:
         raise HTTPException(status_code=401, detail="Token de autenticación requerido.")
-        
+
     t = decode_access_token(token_obj.credentials)
     if not t:
         raise HTTPException(status_code=401, detail="Token inválido o expirado.")
@@ -120,6 +299,19 @@ def cambiar_password_cliente(
 
     cliente.password_hash = get_password_hash(payload.password_nuevo)
     session.add(cliente)
+
+    # ── Generate 'wasn't me' recovery token ───────────────────────────────────
+    recovery_plano = secrets.token_urlsafe(32)
+    recovery_hash  = hashlib.sha256(recovery_plano.encode()).hexdigest()
+    recovery_token = AccountActionToken(
+        token_hash=recovery_hash,
+        entidad_tipo="CLIENTE",
+        entidad_id=cliente.id,
+        accion="PW_CHANGE_RECOVERY",
+        expira_en=get_local_now() + timedelta(hours=TOKEN_PW_RECOVERY_HORAS),
+        usado=False,
+    )
+    session.add(recovery_token)
     session.commit()
 
     log_auditoria(
@@ -127,6 +319,10 @@ def cambiar_password_cliente(
         origen="POST /api/v1/clientes/auth/cambiar-password",
         mensaje=f"Cliente id={cliente.id} cambió su contraseña exitosamente.",
     )
+
+    # Send notification (non-blocking: if email fails it raises but password is already saved)
+    enviar_email_cambio_password_notificacion(cliente.email, recovery_plano)
+
     return PasswordResetResponse(mensaje="Contraseña actualizada exitosamente.")
 
 
@@ -137,40 +333,22 @@ def solicitar_reset_cliente(
     payload: SolicitarResetRequest,
     session: Session = Depends(get_session)
 ):
-    """Genera token de reset y lo envía por email al cliente."""
+    """Genera un código OTP de reset y lo envía por email al cliente."""
     cliente = session.exec(select(Cliente).where(Cliente.email == payload.email)).first()
 
     respuesta_generica = PasswordResetResponse(
-        mensaje="If the email is registered, you will receive a recovery link shortly."
+        mensaje="If the email is registered, you will receive a 6-digit recovery code shortly."
     )
 
     if not cliente or not cliente.activo:
         return respuesta_generica
 
-    # Invalidar tokens anteriores
-    tokens_anteriores = session.exec(
-        select(PasswordResetToken).where(
-            PasswordResetToken.entidad_tipo == "CLIENTE",
-            PasswordResetToken.entidad_id == cliente.id,
-            PasswordResetToken.usado == False,
-        )
-    ).all()
-    for t in tokens_anteriores:
-        t.usado = True
-        session.add(t)
-
-    token_plano = secrets.token_urlsafe(32)
-    token_hash = hashlib.sha256(token_plano.encode()).hexdigest()
-    expira_en = get_local_now() + timedelta(minutes=TOKEN_RESET_EXPIRACION_MINUTOS)
-
-    reset_token = PasswordResetToken(
-        token_hash=token_hash,
-        entidad_tipo="CLIENTE",
-        entidad_id=cliente.id,
-        expira_en=expira_en,
-        usado=False,
+    codigo = _crear_otp_cliente(
+        session,
+        cliente_id=cliente.id,
+        email_destino=cliente.email,
+        proposito="PASSWORD_RESET",
     )
-    session.add(reset_token)
     session.commit()
 
     log_auditoria(
@@ -179,8 +357,39 @@ def solicitar_reset_cliente(
         mensaje=f"Reset solicitado para cliente id={cliente.id}, email={cliente.email}",
     )
 
-    enviar_email_reset_password(cliente.email, token_plano, tipo="cliente")
+    enviar_email_codigo_reset(cliente.email, codigo)
     return respuesta_generica
+
+
+@router.post("/confirmar-reset-otp", response_model=PasswordResetResponse)
+def confirmar_reset_cliente_otp(
+    payload: ConfirmarResetOtpRequest,
+    session: Session = Depends(get_session)
+):
+    cliente = session.exec(select(Cliente).where(Cliente.email == payload.email.strip().lower())).first()
+    if not cliente or not cliente.activo:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado o inactivo.")
+
+    otp = _obtener_otp_valido(
+        session,
+        cliente_id=cliente.id,
+        proposito="PASSWORD_RESET",
+        codigo=payload.codigo,
+    )
+
+    cliente.password_hash = get_password_hash(payload.password_nuevo)
+    otp.usado = True
+
+    session.add(cliente)
+    session.add(otp)
+    session.commit()
+
+    log_auditoria(
+        nivel="INFO",
+        origen="POST /api/v1/clientes/auth/confirmar-reset-otp",
+        mensaje=f"Contraseña restablecida vía OTP para cliente id={cliente.id}.",
+    )
+    return PasswordResetResponse(mensaje="Contraseña restablecida exitosamente. Ya puedes iniciar sesión.")
 
 
 # ─── Confirmar reset ───────────────────────────────────────────────────────────
@@ -228,3 +437,588 @@ def confirmar_reset_cliente(
         mensaje=f"Contraseña restablecida para cliente id={cliente.id}.",
     )
     return PasswordResetResponse(mensaje="Contraseña restablecida exitosamente. Ya puedes iniciar sesión.")
+
+
+@router.get("/open-reset", response_class=HTMLResponse, include_in_schema=False)
+def abrir_reset_en_app(token: str):
+    """
+    HTTPS bridge page for password-reset emails.
+    Email clients are much more reliable with a normal HTTPS button than with a
+    raw custom URI scheme. This page immediately attempts to open the mobile
+    app and shows a visible fallback button if auto-handoff is blocked.
+    """
+    token_safe = escape(token, quote=True)
+    app_link = f"{MOBILE_APP_SCHEME}reset-password?token={token_safe}"
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Open Nocturnal App</title>
+  <meta http-equiv="refresh" content="0;url={app_link}" />
+  <style>
+    body {{
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #0f131c;
+      color: #f3f4f6;
+      display: flex;
+      min-height: 100vh;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }}
+    .card {{
+      max-width: 480px;
+      width: 100%;
+      background: #1c1f29;
+      border: 1px solid #31353f;
+      border-radius: 24px;
+      padding: 32px 28px;
+      text-align: center;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+    }}
+    .eyebrow {{
+      color: #ffb693;
+      letter-spacing: 0.28em;
+      font-size: 11px;
+      font-weight: 700;
+      margin-bottom: 12px;
+    }}
+    h1 {{
+      margin: 0 0 14px 0;
+      font-size: 28px;
+      color: white;
+    }}
+    p {{
+      color: #c9cedd;
+      line-height: 1.6;
+      margin: 0 0 16px 0;
+    }}
+    .button {{
+      display: inline-block;
+      margin-top: 12px;
+      padding: 16px 24px;
+      border-radius: 14px;
+      text-decoration: none;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      background: linear-gradient(135deg, #ff6b00, #ffb693);
+      color: #350f00;
+    }}
+    .small {{
+      margin-top: 20px;
+      font-size: 13px;
+      color: #9ca3af;
+    }}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="eyebrow">NOCTURNAL BAR</div>
+    <h1>Opening the app...</h1>
+    <p>We are sending you back to Nocturnal so you can reset your password securely.</p>
+    <p>If the app does not open automatically, tap the button below.</p>
+    <a class="button" href="{app_link}">OPEN NOCTURNAL APP</a>
+    <p class="small">If you do not have the app installed, return to your device and open Nocturnal manually after requesting a new reset link.</p>
+  </div>
+  <script>
+    window.location.replace({app_link!r});
+  </script>
+</body>
+</html>"""
+
+
+# ─── Actualizar perfil (nombre) ────────────────────────────────────────────────
+
+@router.put("/perfil", response_model=ActualizarPerfilResponse)
+def actualizar_perfil_cliente(
+    payload: ActualizarPerfilRequest,
+    session: Session = Depends(get_session),
+    token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
+):
+    """Updates the authenticated client's display name."""
+    if not token_obj:
+        raise HTTPException(status_code=401, detail="Token de autenticación requerido.")
+
+    t = decode_access_token(token_obj.credentials)
+    if not t:
+        raise HTTPException(status_code=401, detail="Token inválido o expirado.")
+
+    cliente = session.get(Cliente, int(t["sub"]))
+    if not cliente or not cliente.activo:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado o inactivo.")
+
+    cliente.nombre_completo = payload.nombre_completo
+    session.add(cliente)
+    session.commit()
+    session.refresh(cliente)
+
+    log_auditoria(
+        nivel="INFO",
+        origen="PUT /api/v1/clientes/auth/perfil",
+        mensaje=f"Cliente id={cliente.id} actualizó su nombre.",
+    )
+    return ActualizarPerfilResponse(
+        mensaje="Perfil actualizado exitosamente.",
+        nombre_completo=cliente.nombre_completo,
+    )
+
+
+@router.post("/solicitar-cambio-email-otp", response_model=PasswordResetResponse)
+def solicitar_cambio_email_otp(
+    payload: SolicitarCambioEmailRequest,
+    session: Session = Depends(get_session),
+    token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
+):
+    if not token_obj:
+        raise HTTPException(status_code=401, detail="Token de autenticacion requerido.")
+
+    t = decode_access_token(token_obj.credentials)
+    if not t:
+        raise HTTPException(status_code=401, detail="Token invalido o expirado.")
+
+    cliente = session.get(Cliente, int(t["sub"]))
+    if not cliente or not cliente.activo:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado o inactivo.")
+
+    if not verify_password(payload.password_actual, cliente.password_hash):
+        raise HTTPException(status_code=400, detail="La contrasena actual es incorrecta.")
+
+    nuevo_email = payload.nuevo_email.strip().lower()
+    if nuevo_email == cliente.email.strip().lower():
+        raise HTTPException(status_code=400, detail="El nuevo email es identico al email actual.")
+
+    ya_existe = session.exec(select(Cliente).where(Cliente.email == nuevo_email)).first()
+    if ya_existe:
+        raise HTTPException(status_code=400, detail="Este correo electronico ya esta registrado en otra cuenta.")
+
+    codigo_actual = _crear_otp_cliente(
+        session,
+        cliente_id=cliente.id,
+        email_destino=cliente.email,
+        proposito="EMAIL_CHANGE_OLD",
+        nuevo_email=nuevo_email,
+    )
+    codigo_nuevo = _crear_otp_cliente(
+        session,
+        cliente_id=cliente.id,
+        email_destino=nuevo_email,
+        proposito="EMAIL_CHANGE_NEW",
+        nuevo_email=nuevo_email,
+    )
+    session.commit()
+
+    enviar_email_codigo_cambio_email_actual(cliente.email, nuevo_email, codigo_actual)
+    enviar_email_codigo_cambio_email_nuevo(nuevo_email, codigo_nuevo)
+
+    log_auditoria(
+        nivel="INFO",
+        origen="POST /api/v1/clientes/auth/solicitar-cambio-email-otp",
+        mensaje=f"Cliente id={cliente.id} solicito cambio de email OTP a {nuevo_email}.",
+    )
+    return PasswordResetResponse(
+        mensaje="Se enviaron codigos de 6 digitos a tu email actual y al nuevo. El cambio se aplicara cuando ambos codigos sean confirmados."
+    )
+
+
+@router.post("/confirmar-cambio-email-otp", response_model=PasswordResetResponse)
+def confirmar_cambio_email_otp(
+    payload: ConfirmarCambioEmailOtpRequest,
+    session: Session = Depends(get_session),
+    token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
+):
+    if not token_obj:
+        raise HTTPException(status_code=401, detail="Token de autenticacion requerido.")
+
+    t = decode_access_token(token_obj.credentials)
+    if not t:
+        raise HTTPException(status_code=401, detail="Token invalido o expirado.")
+
+    cliente = session.get(Cliente, int(t["sub"]))
+    if not cliente or not cliente.activo:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado o inactivo.")
+
+    otp_actual = _obtener_otp_valido(
+        session,
+        cliente_id=cliente.id,
+        proposito="EMAIL_CHANGE_OLD",
+        codigo=payload.codigo_email_actual,
+    )
+    nuevo_email = otp_actual.nuevo_email
+    if not nuevo_email:
+        raise HTTPException(status_code=400, detail="No hay un cambio de email pendiente.")
+
+    otp_nuevo = _obtener_otp_valido(
+        session,
+        cliente_id=cliente.id,
+        proposito="EMAIL_CHANGE_NEW",
+        codigo=payload.codigo_email_nuevo,
+        nuevo_email=nuevo_email,
+    )
+
+    ya_existe = session.exec(
+        select(Cliente).where(Cliente.email == nuevo_email, Cliente.id != cliente.id)
+    ).first()
+    if ya_existe:
+        raise HTTPException(status_code=400, detail="Ese email ya fue tomado por otra cuenta.")
+
+    cliente.email = nuevo_email
+    cliente.email_verificado = True
+    otp_actual.usado = True
+    otp_nuevo.usado = True
+
+    session.add(cliente)
+    session.add(otp_actual)
+    session.add(otp_nuevo)
+    session.commit()
+
+    log_auditoria(
+        nivel="INFO",
+        origen="POST /api/v1/clientes/auth/confirmar-cambio-email-otp",
+        mensaje=f"Cliente id={cliente.id} actualizo su email a {cliente.email}.",
+    )
+    return PasswordResetResponse(mensaje="Tu email fue actualizado y verificado exitosamente.")
+
+
+# ─── Solicitar cambio de email ─────────────────────────────────────────────────
+
+@router.post("/solicitar-cambio-email", response_model=PasswordResetResponse)
+def solicitar_cambio_email(
+    payload: SolicitarCambioEmailRequest,
+    session: Session = Depends(get_session),
+    token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
+):
+    """
+    Initiates the dual-confirmation email change flow.
+    Sends:
+      1. Authorization email to the CURRENT address (tipo=OLD_CONFIRM)
+      2. Verification email to the NEW address  (tipo=NEW_CONFIRM)
+    The email is only updated after BOTH links have been clicked.
+    """
+    if not token_obj:
+        raise HTTPException(status_code=401, detail="Token de autenticación requerido.")
+
+    t = decode_access_token(token_obj.credentials)
+    if not t:
+        raise HTTPException(status_code=401, detail="Token inválido o expirado.")
+
+    cliente = session.get(Cliente, int(t["sub"]))
+    if not cliente or not cliente.activo:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado o inactivo.")
+
+    if not verify_password(payload.password_actual, cliente.password_hash):
+        raise HTTPException(status_code=400, detail="La contraseña actual es incorrecta.")
+
+    nuevo_email = payload.nuevo_email.strip().lower()
+
+    if nuevo_email == cliente.email.strip().lower():
+        raise HTTPException(status_code=400, detail="El nuevo email es idéntico al email actual.")
+
+    # Check if new email already belongs to another account
+    ya_existe = session.exec(select(Cliente).where(Cliente.email == nuevo_email)).first()
+    if ya_existe:
+        raise HTTPException(status_code=400, detail="Este correo electrónico ya está registrado en otra cuenta.")
+
+    expira_en = get_local_now() + timedelta(hours=TOKEN_EMAIL_CHANGE_HORAS)
+
+    # Invalidate previous pending email-change tokens for this client
+    tokens_anteriores = session.exec(
+        select(EmailChangeToken).where(
+            EmailChangeToken.entidad_id == cliente.id,
+            EmailChangeToken.usado == False,
+        )
+    ).all()
+    for tk in tokens_anteriores:
+        tk.usado = True
+        session.add(tk)
+
+    # OLD_CONFIRM — sent to current email
+    token_old_plano = secrets.token_urlsafe(32)
+    token_old_hash  = hashlib.sha256(token_old_plano.encode()).hexdigest()
+    session.add(EmailChangeToken(
+        token_hash=token_old_hash,
+        entidad_id=cliente.id,
+        nuevo_email=nuevo_email,
+        tipo="OLD_CONFIRM",
+        expira_en=expira_en,
+        usado=False,
+    ))
+
+    # NEW_CONFIRM — sent to the new email
+    token_new_plano = secrets.token_urlsafe(32)
+    token_new_hash  = hashlib.sha256(token_new_plano.encode()).hexdigest()
+    session.add(EmailChangeToken(
+        token_hash=token_new_hash,
+        entidad_id=cliente.id,
+        nuevo_email=nuevo_email,
+        tipo="NEW_CONFIRM",
+        expira_en=expira_en,
+        usado=False,
+    ))
+    session.commit()
+
+    enviar_email_confirmacion_cambio_email_viejo(cliente.email, nuevo_email, token_old_plano)
+    enviar_email_verificacion_nuevo_email(nuevo_email, token_new_plano)
+
+    log_auditoria(
+        nivel="INFO",
+        origen="POST /api/v1/clientes/auth/solicitar-cambio-email",
+        mensaje=f"Cliente id={cliente.id} solicitó cambio de email a {nuevo_email}.",
+    )
+    return PasswordResetResponse(
+        mensaje="Se han enviado correos de confirmación a tu email actual y al nuevo. "
+                "El cambio se aplicará cuando ambos sean confirmados."
+    )
+
+
+# ─── Confirmar cambio de email ─────────────────────────────────────────────────
+
+@router.get("/confirmar-cambio-email", response_model=PasswordResetResponse)
+def confirmar_cambio_email(
+    token: str,
+    tipo: str,
+    session: Session = Depends(get_session)
+):
+    """
+    Confirms one side of the email-change flow.
+    tipo: 'old' (authorization from current email) | 'new' (verification from new email)
+    The email is applied only after both sides are confirmed.
+    """
+    tipo_db = "OLD_CONFIRM" if tipo == "old" else "NEW_CONFIRM"
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    ahora = get_local_now()
+
+    email_token = session.exec(
+        select(EmailChangeToken).where(
+            EmailChangeToken.token_hash == token_hash,
+            EmailChangeToken.tipo == tipo_db,
+            EmailChangeToken.usado == False,
+        )
+    ).first()
+
+    if not email_token:
+        raise HTTPException(status_code=400, detail="Token de cambio de email inválido o ya utilizado.")
+
+    if email_token.expira_en < ahora:
+        email_token.usado = True
+        session.add(email_token)
+        session.commit()
+        raise HTTPException(status_code=400, detail="El enlace ha expirado. Solicita un nuevo cambio de email desde la app.")
+
+    email_token.usado = True
+    session.add(email_token)
+
+    # Check if the OTHER side has already been confirmed
+    otro_tipo = "NEW_CONFIRM" if tipo_db == "OLD_CONFIRM" else "OLD_CONFIRM"
+    otro_token = session.exec(
+        select(EmailChangeToken).where(
+            EmailChangeToken.entidad_id == email_token.entidad_id,
+            EmailChangeToken.nuevo_email == email_token.nuevo_email,
+            EmailChangeToken.tipo == otro_tipo,
+            EmailChangeToken.usado == True,
+        )
+    ).first()
+
+    if otro_token:
+        # Both sides confirmed — apply the email change
+        cliente = session.get(Cliente, email_token.entidad_id)
+        if not cliente or not cliente.activo:
+            raise HTTPException(status_code=404, detail="Cliente no encontrado o inactivo.")
+
+        cliente.email = email_token.nuevo_email
+        session.add(cliente)
+        session.commit()
+
+        log_auditoria(
+            nivel="INFO",
+            origen="GET /api/v1/clientes/auth/confirmar-cambio-email",
+            mensaje=f"Email de cliente id={cliente.id} actualizado a {cliente.email}.",
+        )
+        return PasswordResetResponse(mensaje="¡Email actualizado exitosamente! Ya puedes iniciar sesión con tu nuevo email.")
+    else:
+        session.commit()
+        return PasswordResetResponse(
+            mensaje="Confirmación recibida. El email se actualizará cuando la otra parte también confirme."
+        )
+
+
+# ─── Solicitar eliminación de cuenta ──────────────────────────────────────────
+
+@router.post("/solicitar-eliminacion", response_model=PasswordResetResponse)
+def solicitar_eliminacion_cuenta(
+    payload: SolicitarEliminacionRequest,
+    session: Session = Depends(get_session),
+    token_obj: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)
+):
+    """Sends a deletion-confirmation email. The account is only deactivated after the link is clicked."""
+    if not token_obj:
+        raise HTTPException(status_code=401, detail="Token de autenticación requerido.")
+
+    t = decode_access_token(token_obj.credentials)
+    if not t:
+        raise HTTPException(status_code=401, detail="Token inválido o expirado.")
+
+    cliente = session.get(Cliente, int(t["sub"]))
+    if not cliente or not cliente.activo:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado o inactivo.")
+
+    if not verify_password(payload.password_actual, cliente.password_hash):
+        raise HTTPException(status_code=400, detail="La contraseña es incorrecta.")
+
+    token_plano = secrets.token_urlsafe(32)
+    token_hash  = hashlib.sha256(token_plano.encode()).hexdigest()
+    session.add(AccountActionToken(
+        token_hash=token_hash,
+        entidad_tipo="CLIENTE",
+        entidad_id=cliente.id,
+        accion="DELETE",
+        expira_en=get_local_now() + timedelta(hours=TOKEN_ACCOUNT_ACTION_HORAS),
+        usado=False,
+    ))
+    session.commit()
+
+    enviar_email_solicitud_eliminacion(cliente.email, token_plano)
+
+    log_auditoria(
+        nivel="INFO",
+        origen="POST /api/v1/clientes/auth/solicitar-eliminacion",
+        mensaje=f"Cliente id={cliente.id} solicitó eliminación de cuenta.",
+    )
+    return PasswordResetResponse(
+        mensaje="Se ha enviado un correo de confirmación. Tu cuenta se desactivará solo si confirmas desde el enlace."
+    )
+
+
+# ─── Confirmar eliminación de cuenta ──────────────────────────────────────────
+
+@router.get("/confirmar-eliminacion", response_model=PasswordResetResponse)
+def confirmar_eliminacion_cuenta(
+    token: str,
+    session: Session = Depends(get_session)
+):
+    """Soft-deletes the account by setting activo=False. Records are never permanently removed."""
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    ahora = get_local_now()
+
+    action_token = session.exec(
+        select(AccountActionToken).where(
+            AccountActionToken.token_hash == token_hash,
+            AccountActionToken.accion == "DELETE",
+            AccountActionToken.entidad_tipo == "CLIENTE",
+            AccountActionToken.usado == False,
+        )
+    ).first()
+
+    if not action_token:
+        raise HTTPException(status_code=400, detail="Enlace de eliminación inválido o ya utilizado.")
+
+    if action_token.expira_en < ahora:
+        action_token.usado = True
+        session.add(action_token)
+        session.commit()
+        raise HTTPException(status_code=400, detail="El enlace de eliminación ha expirado. Solicita uno nuevo desde la app.")
+
+    cliente = session.get(Cliente, action_token.entidad_id)
+    if not cliente:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado.")
+
+    cliente.activo = False
+    action_token.usado = True
+    session.add(cliente)
+    session.add(action_token)
+    session.commit()
+
+    log_auditoria(
+        nivel="INFO",
+        origen="GET /api/v1/clientes/auth/confirmar-eliminacion",
+        mensaje=f"Cuenta de cliente id={cliente.id} desactivada (soft-delete).",
+    )
+    return PasswordResetResponse(mensaje="Tu cuenta ha sido desactivada. Si cambias de opinión, puedes reactivarla desde la app.")
+
+
+# ─── Solicitar reactivación de cuenta ─────────────────────────────────────────
+
+@router.post("/reactivar", response_model=PasswordResetResponse)
+def solicitar_reactivacion_cuenta(
+    payload: SolicitarReactivacionRequest,
+    session: Session = Depends(get_session)
+):
+    """Sends a reactivation link to the email if an inactive account exists for it."""
+    # Generic response to avoid email enumeration
+    respuesta_generica = PasswordResetResponse(
+        mensaje="If an inactive account exists for this email, a reactivation link has been sent."
+    )
+
+    cliente = session.exec(select(Cliente).where(Cliente.email == payload.email.strip().lower())).first()
+    if not cliente or cliente.activo:
+        return respuesta_generica
+
+    token_plano = secrets.token_urlsafe(32)
+    token_hash  = hashlib.sha256(token_plano.encode()).hexdigest()
+    session.add(AccountActionToken(
+        token_hash=token_hash,
+        entidad_tipo="CLIENTE",
+        entidad_id=cliente.id,
+        accion="REACTIVATE",
+        expira_en=get_local_now() + timedelta(hours=TOKEN_ACCOUNT_ACTION_HORAS),
+        usado=False,
+    ))
+    session.commit()
+
+    enviar_email_reactivacion(cliente.email, token_plano)
+
+    log_auditoria(
+        nivel="INFO",
+        origen="POST /api/v1/clientes/auth/reactivar",
+        mensaje=f"Reactivación solicitada para cliente id={cliente.id}.",
+    )
+    return respuesta_generica
+
+
+# ─── Confirmar reactivación de cuenta ─────────────────────────────────────────
+
+@router.get("/confirmar-reactivacion", response_model=PasswordResetResponse)
+def confirmar_reactivacion_cuenta(
+    token: str,
+    session: Session = Depends(get_session)
+):
+    """Reactivates the account by setting activo=True after validating the token."""
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    ahora = get_local_now()
+
+    action_token = session.exec(
+        select(AccountActionToken).where(
+            AccountActionToken.token_hash == token_hash,
+            AccountActionToken.accion == "REACTIVATE",
+            AccountActionToken.entidad_tipo == "CLIENTE",
+            AccountActionToken.usado == False,
+        )
+    ).first()
+
+    if not action_token:
+        raise HTTPException(status_code=400, detail="Enlace de reactivación inválido o ya utilizado.")
+
+    if action_token.expira_en < ahora:
+        action_token.usado = True
+        session.add(action_token)
+        session.commit()
+        raise HTTPException(status_code=400, detail="El enlace de reactivación ha expirado. Solicita uno nuevo desde la app.")
+
+    cliente = session.get(Cliente, action_token.entidad_id)
+    if not cliente:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado.")
+
+    cliente.activo = True
+    action_token.usado = True
+    session.add(cliente)
+    session.add(action_token)
+    session.commit()
+
+    log_auditoria(
+        nivel="INFO",
+        origen="GET /api/v1/clientes/auth/confirmar-reactivacion",
+        mensaje=f"Cuenta de cliente id={cliente.id} reactivada exitosamente.",
+    )
+    return PasswordResetResponse(mensaje="¡Tu cuenta ha sido reactivada exitosamente! Ya puedes iniciar sesión.")

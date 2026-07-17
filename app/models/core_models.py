@@ -40,6 +40,7 @@ class Cliente(SQLModel, table=True):
     telefono: Optional[str] = Field(default=None, sa_column=Column("Telefono", String(20)))
     password_hash: str = Field(sa_column=Column("PasswordHash", String(255), nullable=False))
     fecha_registro: datetime = Field(sa_column=Column("FechaRegistro", DateTime, server_default=text("GETDATE()")))
+    email_verificado: bool = Field(sa_column=Column("EmailVerificado", Boolean, nullable=False, server_default=text("0")))
     activo: bool = Field(sa_column=Column("Activo", Boolean, server_default=text("1")))
 
 
@@ -259,6 +260,19 @@ class PasswordResetToken(SQLModel, table=True):
     # EMPLEADO | CLIENTE
     entidad_tipo: str = Field(sa_column=Column("EntidadTipo", String(20), nullable=False))
     entidad_id: int = Field(sa_column=Column("EntidadId", Integer, nullable=False))
+    expira_en: datetime = Field(sa_column=Column("ExpiraEn", DateTime, nullable=False))
+    usado: bool = Field(default=False, sa_column=Column("Usado", Boolean, server_default=text("0")))
+    fecha_creacion: datetime = Field(sa_column=Column("FechaCreacion", DateTime, server_default=text("GETDATE()")))
+
+
+class ClienteOtpCode(SQLModel, table=True):
+    __tablename__ = "Cliente_Otp_Codes"
+    id: Optional[int] = Field(default=None, sa_column=Column("Id", Integer, primary_key=True))
+    codigo_hash: str = Field(sa_column=Column("CodigoHash", String(255), nullable=False, index=True))
+    cliente_id: int = Field(sa_column=Column("ClienteId", Integer, ForeignKey("Clientes.Id"), nullable=False, index=True))
+    email_destino: str = Field(sa_column=Column("EmailDestino", String(150), nullable=False))
+    proposito: str = Field(sa_column=Column("Proposito", String(40), nullable=False, index=True))
+    nuevo_email: Optional[str] = Field(default=None, sa_column=Column("NuevoEmail", String(150), nullable=True))
     expira_en: datetime = Field(sa_column=Column("ExpiraEn", DateTime, nullable=False))
     usado: bool = Field(default=False, sa_column=Column("Usado", Boolean, server_default=text("0")))
     fecha_creacion: datetime = Field(sa_column=Column("FechaCreacion", DateTime, server_default=text("GETDATE()")))
@@ -492,3 +506,53 @@ class SupervisorSessionAudit(SQLModel, table=True):
     inicio: datetime = Field(sa_column=Column("inicio", DateTime, nullable=False))
     fin: datetime = Field(sa_column=Column("fin", DateTime, nullable=False))
     motivo_fin: str = Field(sa_column=Column("motivo_fin", String(50), nullable=False))
+
+
+# ─────────────────────────────────────────────────────────────────
+# TOKENS PARA CAMBIO DE EMAIL Y ACCIONES DE CUENTA
+# ─────────────────────────────────────────────────────────────────
+
+class EmailChangeToken(SQLModel, table=True):
+    """
+    Token de doble confirmación para cambio de email.
+
+    Se crean DOS registros por solicitud:
+      tipo='OLD_CONFIRM'  → enlace enviado al email ACTUAL (el usuario confirma que autorizó el cambio)
+      tipo='NEW_CONFIRM'  → enlace enviado al email NUEVO  (verifica que el nuevo email es válido y accesible)
+
+    El cambio solo se aplica cuando AMBOS tokens han sido usados.
+    """
+    __tablename__ = "Email_Change_Tokens"
+    id: Optional[int] = Field(default=None, sa_column=Column("Id", Integer, primary_key=True))
+    token_hash: str = Field(sa_column=Column("TokenHash", String(255), nullable=False, index=True))
+    entidad_id: int = Field(sa_column=Column("EntidadId", Integer, nullable=False))
+    nuevo_email: str = Field(sa_column=Column("NuevoEmail", String(150), nullable=False))
+    # 'OLD_CONFIRM' → confirmación desde el email actual
+    # 'NEW_CONFIRM' → verificación desde el email nuevo
+    tipo: str = Field(sa_column=Column("Tipo", String(20), nullable=False))
+    expira_en: datetime = Field(sa_column=Column("ExpiraEn", DateTime, nullable=False))
+    usado: bool = Field(default=False, sa_column=Column("Usado", Boolean, server_default=text("0")))
+    fecha_creacion: datetime = Field(sa_column=Column("FechaCreacion", DateTime, server_default=text("GETDATE()")))
+
+
+class AccountActionToken(SQLModel, table=True):
+    """
+    Token de acción de cuenta reutilizable para:
+      accion='DELETE'               → confirmar eliminación de cuenta (soft-delete)
+      accion='REACTIVATE'           → confirmar reactivación de cuenta
+      accion='PW_CHANGE_RECOVERY'   → recuperación de emergencia tras cambio de contraseña no autorizado
+
+    Sigue el mismo patrón que PasswordResetToken.
+    """
+    __tablename__ = "Account_Action_Tokens"
+    id: Optional[int] = Field(default=None, sa_column=Column("Id", Integer, primary_key=True))
+    token_hash: str = Field(sa_column=Column("TokenHash", String(255), nullable=False, index=True))
+    # Solo 'CLIENTE' por ahora
+    entidad_tipo: str = Field(sa_column=Column("EntidadTipo", String(20), nullable=False))
+    entidad_id: int = Field(sa_column=Column("EntidadId", Integer, nullable=False))
+    # 'DELETE' | 'REACTIVATE' | 'PW_CHANGE_RECOVERY'
+    accion: str = Field(sa_column=Column("Accion", String(30), nullable=False))
+    expira_en: datetime = Field(sa_column=Column("ExpiraEn", DateTime, nullable=False))
+    usado: bool = Field(default=False, sa_column=Column("Usado", Boolean, server_default=text("0")))
+    fecha_creacion: datetime = Field(sa_column=Column("FechaCreacion", DateTime, server_default=text("GETDATE()")))
+

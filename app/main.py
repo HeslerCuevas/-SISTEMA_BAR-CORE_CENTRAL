@@ -22,14 +22,14 @@ gateway_token_scheme = APIKeyHeader(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("[SISTEMA] Iniciando CORE Mainframe... Verificando tablas en SQL Server.")
+    print("[SYSTEM] Starting CORE Mainframe... Checking tables in SQL Server.")
 
     SQLModel.metadata.create_all(engine)
 
     log_auditoria(
         nivel="INFO",
         origen="SISTEMA",
-        mensaje="Servicio CORE iniciado exitosamente."
+        mensaje="CORE service started successfully."
     )
 
     yield

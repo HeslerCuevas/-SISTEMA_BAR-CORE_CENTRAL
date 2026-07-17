@@ -4,7 +4,7 @@ Pydantic schemas for the Ingredient Inventory System.
 Covers:
     - Ingredient categories (CategoriaIngrediente)
     - Ingredients (Ingrediente)
-    - Product recipes / BOM (RecetaProducto + ComponenteReceta)
+    - Product recipes / BOM (RecetaProduct + ComponenteReceta)
     - Ingredient movements (MovimientoIngrediente)
     - Availability and reporting
 """
@@ -14,6 +14,7 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 from typing import List, Literal, Optional
+from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -234,7 +235,7 @@ class MovimientoIngredienteCreate(BaseModel):
                               description="Delta (>= 0). For CORRECCION: new absolute quantity.")
     notas: Optional[str] = Field(default=None, max_length=500)
     documento_referencia: Optional[str] = Field(default=None, max_length=100)
-    movimiento_local_uuid: Optional[str] = Field(
+    movimiento_local_uuid: Optional[UUID] = Field(
         default=None,
         description="Client-side UUID for idempotency (duplicate requests are ignored)"
     )
@@ -252,7 +253,7 @@ class MovimientoIngredienteResponse(BaseModel):
     pedido_id: Optional[int] = None
     notas: Optional[str] = None
     fecha_movimiento: datetime
-    movimiento_local_uuid: Optional[str] = None
+    movimiento_local_uuid: Optional[UUID] = None
 
     class Config:
         from_attributes = True

@@ -57,6 +57,19 @@ def crear_pedido_completo(
             if existente:
                 return existente
 
+        if pedido_in.mesa is not None:
+            pedido_activo_en_mesa = session.exec(
+                select(PedidoGlobal).where(
+                    PedidoGlobal.mesa == str(pedido_in.mesa),
+                    PedidoGlobal.estado.in_(["PENDIENTE", "ABIERTA", "EN_PREPARACION"])
+                )
+            ).first()
+            if pedido_activo_en_mesa:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"La mesa {pedido_in.mesa} ya está ocupada por un pedido activo."
+                )
+
         nuevo_pedido = OrdersManager.crear_pedido_completo(
             session=session,
             canal_origen=pedido_in.canal_origen,

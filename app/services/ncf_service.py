@@ -54,7 +54,7 @@ def obtener_secuencia_activa(
         log_auditoria(
             nivel="CRITICAL",
             origen="NCFService",
-            mensaje=f"No hay secuencia NCF activa para tipo={tipo_ncf}, sucursal={sucursal_id}",
+            mensaje=f"No active NCF sequence for type={tipo_ncf}, branch={sucursal_id}",
         )
         raise HTTPException(
             status_code=409,
@@ -72,11 +72,11 @@ def obtener_secuencia_activa(
         log_auditoria(
             nivel="WARNING",
             origen="NCFService",
-            mensaje=f"Secuencia NCF id={secuencia.id} agotada y desactivada automáticamente.",
+            mensaje=f"NCF sequence id={secuencia.id} exhausted and automatically deactivated.",
         )
         raise HTTPException(
             status_code=409,
-            detail="La secuencia NCF se ha agotado. Se requiere cargar un nuevo rango autorizado."
+        detail="The NCF sequence has been exhausted. A new authorized range must be loaded."
         )
 
     return secuencia
@@ -108,7 +108,7 @@ def asignar_ncf(
         log_auditoria(
             nivel="WARNING",
             origen="NCFService",
-            mensaje=f"Secuencia NCF id={secuencia.id} agotada luego de asignar {ncf_completo}.",
+            mensaje=f"NCF sequence id={secuencia.id} exhausted after assigning {ncf_completo}.",
         )
 
     session.add(secuencia)

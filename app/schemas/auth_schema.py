@@ -46,6 +46,7 @@ class ClienteRegistroResponse(BaseModel):
     mensaje: str
     cliente_id: int
     email: str
+    email_verificado: bool
 
 
 class ClienteLoginRequest(BaseModel):
@@ -59,6 +60,8 @@ class ClienteLoginResponse(BaseModel):
     canal: str
     cliente_id: int
     nombre_completo: str
+    email: str
+    email_verificado: bool
 
 
 # ─── Cambio de contraseña ─────────────────────────────────────────────────────
@@ -73,7 +76,7 @@ class CambioPasswordEmpleadoRequest(BaseModel):
     @classmethod
     def password_segura(cls, v: str) -> str:
         if len(v) < 8:
-            raise ValueError('La nueva contraseña debe tener al menos 8 caracteres.')
+            raise ValueError('The new password must contain at least 8 characters.')
         if not re.search(r'[A-Z]', v):
             raise ValueError('La nueva contraseña debe contener al menos una mayúscula.')
         if not re.search(r'[0-9]', v):
@@ -114,7 +117,7 @@ class CambioPasswordClienteRequest(BaseModel):
     @classmethod
     def password_segura(cls, v: str) -> str:
         if len(v) < 8:
-            raise ValueError('La nueva contraseña debe tener al menos 8 caracteres.')
+            raise ValueError('The new password must contain at least 8 characters.')
         if not re.search(r'[A-Z]', v):
             raise ValueError('La nueva contraseña debe contener al menos una mayúscula.')
         if not re.search(r'[0-9]', v):
@@ -159,3 +162,119 @@ class ConfirmarResetRequest(BaseModel):
 
 class PasswordResetResponse(BaseModel):
     mensaje: str
+
+
+class SolicitarOtpEmailRequest(BaseModel):
+    email: str
+
+
+class ConfirmarResetOtpRequest(BaseModel):
+    email: str
+    codigo: str
+    password_nuevo: str
+    password_nuevo_confirmacion: str
+
+    @field_validator('codigo')
+    @classmethod
+    def codigo_valido(cls, v: str) -> str:
+        v = v.strip()
+        if not re.fullmatch(r'\d{6}', v):
+            raise ValueError('El codigo debe tener 6 digitos.')
+        return v
+
+    @field_validator('password_nuevo')
+    @classmethod
+    def password_segura(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError('La contrasena debe tener al menos 8 caracteres.')
+        if not re.search(r'[A-Z]', v):
+            raise ValueError('La contrasena debe contener al menos una mayuscula.')
+        if not re.search(r'[0-9]', v):
+            raise ValueError('La contrasena debe contener al menos un numero.')
+        return v
+
+    @field_validator('password_nuevo_confirmacion')
+    @classmethod
+    def confirmacion_coincide(cls, v: str, info) -> str:
+        if 'password_nuevo' in info.data and v != info.data['password_nuevo']:
+            raise ValueError('Las contrasenas nuevas no coinciden.')
+        return v
+
+
+class VerificarEmailOtpRequest(BaseModel):
+    codigo: str
+
+    @field_validator('codigo')
+    @classmethod
+    def codigo_valido(cls, v: str) -> str:
+        v = v.strip()
+        if not re.fullmatch(r'\d{6}', v):
+            raise ValueError('El codigo debe tener 6 digitos.')
+        return v
+
+
+class ConfirmarCambioEmailOtpRequest(BaseModel):
+    codigo_email_actual: str
+    codigo_email_nuevo: str
+
+    @field_validator('codigo_email_actual', 'codigo_email_nuevo')
+    @classmethod
+    def codigo_valido(cls, v: str) -> str:
+        v = v.strip()
+        if not re.fullmatch(r'\d{6}', v):
+            raise ValueError('Cada codigo debe tener 6 digitos.')
+        return v
+
+
+# ─── Actualización de perfil ──────────────────────────────────────────────────
+
+class ActualizarPerfilRequest(BaseModel):
+    """Para que un cliente actualice su nombre."""
+    nombre_completo: str
+
+    @field_validator('nombre_completo')
+    @classmethod
+    def nombre_valido(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError('El nombre no puede estar vacío.')
+        if len(v) > 150:
+            raise ValueError('El nombre no puede exceder 150 caracteres.')
+        return v
+
+
+class ActualizarPerfilResponse(BaseModel):
+    mensaje: str
+    nombre_completo: str
+
+
+# ─── Cambio de email con doble confirmación ───────────────────────────────────
+
+class SolicitarCambioEmailRequest(BaseModel):
+    """Solicita un cambio de email. Requiere contraseña actual para confirmar la identidad."""
+    nuevo_email: str
+    password_actual: str
+
+    @field_validator('nuevo_email')
+    @classmethod
+    def email_valido(cls, v: str) -> str:
+        v = v.strip().lower()
+        if not re.match(r'^[^\s@]+@[^\s@]+\.[^\s@]{2,}$', v):
+            raise ValueError('El nuevo correo electrónico no tiene un formato válido.')
+        if len(v) > 150:
+            raise ValueError('El correo electrónico no puede exceder 150 caracteres.')
+        return v
+
+
+# ─── Eliminación de cuenta (soft delete) ─────────────────────────────────────
+
+class SolicitarEliminacionRequest(BaseModel):
+    """Requiere contraseña actual para confirmar la identidad antes de enviar el email de eliminación."""
+    password_actual: str
+
+
+# ─── Reactivación de cuenta ───────────────────────────────────────────────────
+
+class SolicitarReactivacionRequest(BaseModel):
+    """Solicita la reactivación de una cuenta desactivada por email."""
+    email: str

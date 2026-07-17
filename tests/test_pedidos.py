@@ -44,6 +44,36 @@ def test_crear_pedido(client: TestClient, setup_pedido_env, admin_token_header):
     assert "factura_local_uuid" in response.json()
     assert response.json()["estado"] == "PENDIENTE"
 
+def test_crear_pedido_rechaza_mesa_ocupada(client: TestClient, setup_pedido_env, db_session, admin_token_header):
+    pedido_existente = PedidoGlobal(
+        canal_origen="MOVIL",
+        mesa="10",
+        estado="ABIERTA",
+        factura_local_uuid=uuid.uuid4(),
+    )
+    db_session.add(pedido_existente)
+    db_session.commit()
+
+    payload = {
+        "canal_origen": "WEB",
+        "mesa": "10",
+        "detalles": [
+            {
+                "producto_id": setup_pedido_env.id,
+                "cantidad": 1,
+                "precio_unitario": 500.0,
+                "impuesto": 18.0,
+                "monto_impuesto": 90.0,
+                "subtotal_linea": 590.0
+            }
+        ],
+        "propina_extra": 0.0
+    }
+    response = client.post("/api/v1/pedidos/", json=payload, headers=admin_token_header)
+
+    assert response.status_code == 409
+    assert "mesa 10" in response.json()["detail"].lower()
+
 def test_crear_pedido_sin_detalles(client: TestClient, admin_token_header):
     payload = {
         "canal_origen": "WEB",

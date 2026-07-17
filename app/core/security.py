@@ -21,7 +21,7 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
 
 if not SECRET_KEY:
-    raise RuntimeError("ERROR CRÍTICO: No se encontró CORE_SECRET_KEY en las variables de entorno.")
+    raise RuntimeError("CRITICAL ERROR: CORE_SECRET_KEY was not found in environment variables.")
 
 
 
@@ -73,17 +73,17 @@ GATEWAY_SECRET = SECRET_KEY
 async def validate_gateway_token(x_gateway_token: str = Header(None)):
     """
     if not x_gateway_token:
-        print("[SEGURIDAD] No está el token de Gateway en la petición.")
+        print("[SECURITY] Gateway token is missing from the request.")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Acceso denegado: Token de Gateway ausente en los encabezados."
+            detail="Access denied: Gateway token is missing from the headers."
         )
 
     if x_gateway_token != GATEWAY_SECRET:
-        print(f"[SEGURIDAD] Token de Gateway incorrecto recibido: {x_gateway_token}")
+        print(f"[SECURITY] Incorrect Gateway token received: {x_gateway_token}")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Acceso denegado: Token de Gateway incorrecto o inválido."
+            detail="Access denied: Incorrect or invalid Gateway token."
         )
     """
     return
@@ -92,28 +92,28 @@ async def validate_gateway_token(x_gateway_token: str = Header(None)):
 def verificar_rol_empleado(token: str, roles_permitidos: List[str], db: Session) -> dict:
 
     if not token:
-        raise HTTPException(status_code=401, detail="Token de autenticación requerido.")
+        raise HTTPException(status_code=401, detail="Authentication token required.")
 
     payload = decode_access_token(token)
     if payload is None:
-        raise HTTPException(status_code=401, detail="Token inválido o expirado.")
+        raise HTTPException(status_code=401, detail="Invalid or expired token.")
 
     empleado_id = payload.get("sub")
     if not empleado_id:
-        raise HTTPException(status_code=401, detail="Token malformado.")
+        raise HTTPException(status_code=401, detail="Malformed token.")
 
     empleado = db.get(Empleado, int(empleado_id))
     if not empleado or not empleado.activo:
-        raise HTTPException(status_code=401, detail="Empleado no encontrado o inactivo.")
+        raise HTTPException(status_code=401, detail="Employee not found or inactive.")
 
     rol = db.get(Rol, empleado.rol_id)
     if not rol:
-        raise HTTPException(status_code=403, detail="El empleado no tiene rol asignado.")
+        raise HTTPException(status_code=403, detail="The employee has no assigned role.")
 
     if roles_permitidos and rol.nombre not in roles_permitidos:
         raise HTTPException(
             status_code=403,
-            detail=f"Acceso denegado. Se requiere uno de los roles: {', '.join(roles_permitidos)}."
+            detail=f"Access denied. One of the following roles is required: {', '.join(roles_permitidos)}."
         )
 
     return {"empleado_id": empleado.id, "rol": rol.nombre, "empleado": empleado}

@@ -194,7 +194,7 @@ class IngredientInventoryManager:
         if cantidad < 0:
             raise HTTPException(
                 status_code=400,
-                detail="La cantidad del movimiento no puede ser negativa.",
+                detail="Movement quantity cannot be negative.",
             )
 
         # ── Idempotency check ──────────────────────────────────────────────
@@ -212,12 +212,12 @@ class IngredientInventoryManager:
         if not ingrediente:
             raise HTTPException(
                 status_code=404,
-                detail=f"Ingrediente id={ingrediente_id} no encontrado.",
+                detail=f"Ingredient id={ingrediente_id} not found.",
             )
         if not ingrediente.activo:
             raise HTTPException(
                 status_code=400,
-                detail=f"El ingrediente '{ingrediente.nombre}' está inactivo y no puede recibir movimientos.",
+                detail=f"The ingredient '{ingrediente.nombre}' is inactive and cannot receive movements.",
             )
 
         cantidad_anterior = Decimal(str(ingrediente.cantidad_actual))
@@ -247,7 +247,7 @@ class IngredientInventoryManager:
         if cantidad_nueva < 0:
             raise HTTPException(
                 status_code=400,
-                detail=f"El resultado de este movimiento dejaría el stock de '{ingrediente.nombre}' en negativo.",
+                detail=f"This movement would make the stock of '{ingrediente.nombre}' negative.",
             )
 
         # ── Persist ────────────────────────────────────────────────────────
@@ -324,14 +324,14 @@ class IngredientInventoryManager:
                 if not ingrediente:
                     raise HTTPException(
                         status_code=400,
-                        detail=f"Ingrediente id={comp.ingrediente_id} referenciado en la receta del producto "
+                        detail=f"Ingredient id={comp.ingrediente_id} referenced in the product recipe "
                                f"'{producto.nombre}' no existe.",
                     )
                 if not ingrediente.activo:
                     raise HTTPException(
                         status_code=400,
-                        detail=f"El ingrediente '{ingrediente.nombre}' está inactivo. "
-                               f"Actualiza la receta del producto '{producto.nombre}'.",
+                        detail=f"The ingredient '{ingrediente.nombre}' is inactive. "
+                               f"Update the product recipe '{producto.nombre}'.",
                     )
 
                 try:
@@ -344,7 +344,7 @@ class IngredientInventoryManager:
                 except UnitConversionError as exc:
                     raise HTTPException(
                         status_code=400,
-                        detail=f"Error de conversión de unidades en receta del producto "
+                        detail=f"Unit conversion error in product recipe "
                                f"'{producto.nombre}': {exc}",
                     )
 

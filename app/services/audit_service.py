@@ -18,4 +18,4 @@ def log_auditoria(nivel: str, origen: str, mensaje: str, data: dict = None):
             session.add(nuevo_log)
             session.commit()
         except Exception as e:
-            print(f"Error crítico al escribir en Core_Logs: {e}")
+                print(f"Critical error writing to Core_Logs: {e}")

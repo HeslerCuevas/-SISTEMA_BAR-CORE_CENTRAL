@@ -1,6 +1,7 @@
 import pytest
+import uuid
 from fastapi.testclient import TestClient
-from app.models.core_models import Mesa
+from app.models.core_models import Mesa, PedidoGlobal
 
 GATEWAY_HEADER = {"X-Gateway-Token": "super_secret_test_key"}
 
@@ -51,6 +52,24 @@ def test_vincular_mesa_qr_invalido(client: TestClient):
     payload = {"codigo_qr_mesa": "token_falso"}
     response = client.post("/api/v1/mesas/vincular", json=payload, headers=GATEWAY_HEADER)
     assert response.status_code == 404
+
+def test_vincular_mesa_devuelve_pedido_activo(client: TestClient, db_session, test_mesa):
+    pedido_uuid = uuid.uuid4()
+    pedido = PedidoGlobal(
+        canal_origen="MOVIL",
+        mesa=str(test_mesa.numero),
+        estado="PENDIENTE",
+        factura_local_uuid=pedido_uuid,
+    )
+    db_session.add(pedido)
+    db_session.commit()
+
+    payload = {"codigo_qr_mesa": test_mesa.qr_token}
+    response = client.post("/api/v1/mesas/vincular", json=payload, headers=GATEWAY_HEADER)
+
+    assert response.status_code == 200
+    assert response.json()["estado_mesa"] == "ABIERTA"
+    assert response.json()["factura_local_uuid_activa"] == str(pedido_uuid)
 
 def test_llamar_mesero(client: TestClient, test_mesa):
     payload = {"qr_token": test_mesa.qr_token, "motivo_llamada": "Asistencia"}

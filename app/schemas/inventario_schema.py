@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import Optional, Literal
 from datetime import datetime
+from uuid import UUID
 
 class MovimientoCreate(BaseModel):
     producto_id: int
@@ -8,7 +9,7 @@ class MovimientoCreate(BaseModel):
     tipo_movimiento: Literal["ENTRADA", "SALIDA", "AJUSTE"]
     cantidad: int = Field(..., gt=0, description="La cantidad debe ser mayor a cero")
     motivo: str
-    movimiento_local_uuid: Optional[str] = None
+    movimiento_local_uuid: Optional[UUID] = None
 
 class InventarioResponse(BaseModel):
     producto_id: int
@@ -28,8 +29,8 @@ class MovimientoInventarioResponse(BaseModel):
     cantidad: int
     motivo: str
     fecha_movimiento: datetime
-    movimiento_local_uuid: Optional[str] = None
-    factura_local_uuid: Optional[str] = None
+    movimiento_local_uuid: Optional[UUID] = None
+    factura_local_uuid: Optional[UUID] = None
 
     class Config:
         from_attributes = True

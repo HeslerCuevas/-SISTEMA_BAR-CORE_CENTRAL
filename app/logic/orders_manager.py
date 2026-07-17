@@ -69,7 +69,7 @@ class OrdersManager:
             if not producto or not producto.activo:
                 raise HTTPException(
                     status_code=404,
-                    detail=f"Producto id={item['producto_id']} no encontrado o está inactivo.",
+                    detail=f"Product id={item['producto_id']} no encontrado o está inactivo.",
                 )
 
             # Load tax rate (lazy-loaded relationship)
@@ -113,7 +113,7 @@ class OrdersManager:
                     producto_id=producto.id,
                     cantidad=item["cantidad"],
                     tipo="SALIDA",
-                    motivo=f"Venta canal {canal_origen} - Pedido #{nuevo_pedido.id}",
+                    motivo=f"Venta canal {canal_origen} - Order #{nuevo_pedido.id}",
                     empleado_id=empleado_id,
                     movimiento_local_uuid=item.get("detalle_local_uuid"),
                     factura_local_uuid=factura_local_uuid,
