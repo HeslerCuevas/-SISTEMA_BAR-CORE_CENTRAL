@@ -23,7 +23,10 @@ router = APIRouter(prefix="/api/v1/mesas", tags=["Gestión de Mesas"])
 # ─── Configuración de Códigos QR ──────────────────────────────────────────────
 URL_BASE = "https://nocturnal-bar.app/scan"
 SUCURSAL_ID = 1
-CARPETA_QRS = "qrs_mesas"
+# Ruta absoluta (independiente del cwd desde el que se lance uvicorn):
+# app/api/routers/mesa_router.py -> sube 3 niveles hasta la raiz del proyecto (QA CORE)
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+CARPETA_QRS = os.path.join(_PROJECT_ROOT, "qrs_mesas")
 
 
 def generar_imagen_qr(numero_mesa: int, qr_token: str) -> str:
@@ -162,14 +165,25 @@ def crear_mesa(
     db.commit()
     db.refresh(mesa)
 
-    # Generamos la imagen física PNG de forma automática al crear la mesa
-    ruta_imagen = generar_imagen_qr(numero_mesa=mesa.numero, qr_token=mesa.qr_token)
+    # Generamos la imagen física PNG de forma automática al crear la mesa.
+    # Esto es un artefacto auxiliar (el qr_token ya quedó guardado en la mesa),
+    # así que si falla (permisos, carpeta no escribible, etc.) no debe hacer
+    # fallar la creación de la mesa, que ya fue confirmada en la base de datos.
+    try:
+        ruta_imagen = generar_imagen_qr(numero_mesa=mesa.numero, qr_token=mesa.qr_token)
+        log_auditoria(
+            nivel="INFO",
+            origen="POST /api/v1/mesas/admin",
+            mensaje=f"Mesa creada y QR generado ({ruta_imagen}): número={mesa.numero}, id={mesa.id}",
+        )
+    except Exception as exc:
+        logger.exception(f"No se pudo generar la imagen QR para la mesa {mesa.numero} (id={mesa.id})")
+        log_auditoria(
+            nivel="ERROR",
+            origen="POST /api/v1/mesas/admin",
+            mensaje=f"Mesa creada (id={mesa.id}) pero falló la generación del QR físico: {exc}",
+        )
 
-    log_auditoria(
-        nivel="INFO",
-        origen="POST /api/v1/mesas/admin",
-        mensaje=f"Mesa creada y QR generado ({ruta_imagen}): número={mesa.numero}, id={mesa.id}",
-    )
     return mesa
 
 

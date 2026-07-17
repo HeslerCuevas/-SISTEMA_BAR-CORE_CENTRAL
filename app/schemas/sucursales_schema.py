@@ -17,6 +17,7 @@ class SucursalCreate(BaseModel):
 class SucursalUpdate(BaseModel):
     nombre: Optional[str] = None
     direccion: Optional[str] = None
+    activo: Optional[bool] = None
 
     @field_validator('nombre')
     @classmethod
